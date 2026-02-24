@@ -6,45 +6,32 @@ import {
   ChevronRight, Trash2
 } from "lucide-react";
 import { format, isToday, isPast, isTomorrow, isThisWeek, parseISO } from "date-fns";
-import { zhCN } from "date-fns/locale";
+import { zhCN, enUS } from "date-fns/locale";
+import { useTranslation } from "react-i18next";
 import { api } from "@/lib/api";
 import { Task, TaskFilter, TaskPriority, TaskStats } from "@/types";
 import { cn } from "@/lib/utils";
 
-/* ===== 优先级配置 ===== */
-const PRIORITY_CONFIG: Record<number, { label: string; color: string; flagClass: string }> = {
-  3: { label: "高", color: "text-red-500", flagClass: "text-red-500" },
-  2: { label: "中", color: "text-amber-500", flagClass: "text-amber-500" },
-  1: { label: "低", color: "text-blue-400", flagClass: "text-blue-400" },
-};
-
-/* ===== 过滤器配置 ===== */
-const FILTERS: { key: TaskFilter; label: string; icon: React.ReactNode }[] = [
-  { key: "all", label: "全部任务", icon: <Inbox size={16} /> },
-  { key: "today", label: "今天", icon: <CalendarDays size={16} /> },
-  { key: "week", label: "未来 7 天", icon: <Calendar size={16} /> },
-  { key: "overdue", label: "已逾期", icon: <AlertTriangle size={16} /> },
-  { key: "completed", label: "已完成", icon: <CheckCheck size={16} /> },
-];
-
 /* ===== 日期显示 ===== */
 function DateBadge({ dateStr }: { dateStr: string | null }) {
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === "zh-CN" ? zhCN : enUS;
   if (!dateStr) return null;
   const date = parseISO(dateStr);
   let className = "text-tx-tertiary";
-  let text = format(date, "MM/dd", { locale: zhCN });
+  let text = format(date, "MM/dd", { locale: dateLocale });
 
   if (isToday(date)) {
     className = "text-green-500";
-    text = "今天";
+    text = t('tasks.today');
   } else if (isTomorrow(date)) {
     className = "text-accent-primary";
-    text = "明天";
+    text = t('tasks.tomorrow');
   } else if (isPast(date)) {
     className = "text-red-500";
-    text = "逾期 " + format(date, "MM/dd");
+    text = t('tasks.overdue') + " " + format(date, "MM/dd");
   } else if (isThisWeek(date)) {
-    text = format(date, "EEEE", { locale: zhCN });
+    text = format(date, "EEEE", { locale: dateLocale });
   }
 
   return (
@@ -124,10 +111,18 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
   onUpdate: (id: string, data: Partial<Task>) => void;
   onDelete: (id: string) => void;
 }>(({ task, onClose, onUpdate, onDelete }, ref) => {
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language === "zh-CN" ? zhCN : enUS;
   const [title, setTitle] = useState(task.title);
   const [priority, setPriority] = useState<TaskPriority>(task.priority);
   const [dueDate, setDueDate] = useState(task.dueDate || "");
   const titleRef = useRef<HTMLInputElement>(null);
+
+  const PRIORITY_CONFIG: Record<number, { label: string; color: string; flagClass: string }> = {
+    3: { label: t('tasks.high'), color: "text-red-500", flagClass: "text-red-500" },
+    2: { label: t('tasks.medium'), color: "text-amber-500", flagClass: "text-amber-500" },
+    1: { label: t('tasks.low'), color: "text-blue-400", flagClass: "text-blue-400" },
+  };
 
   useEffect(() => {
     setTitle(task.title);
@@ -150,7 +145,7 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-app-border">
-        <span className="text-sm font-semibold text-tx-primary">任务详情</span>
+        <span className="text-sm font-semibold text-tx-primary">{t('tasks.taskDetail')}</span>
         <button onClick={onClose} className="p-1 rounded-md hover:bg-app-hover transition-colors">
           <X size={16} className="text-tx-secondary" />
         </button>
@@ -160,7 +155,7 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
       <div className="flex-1 overflow-auto p-4 space-y-5">
         {/* 标题 */}
         <div>
-          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">标题</label>
+          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t('tasks.taskTitle')}</label>
           <input
             ref={titleRef}
             value={title}
@@ -172,7 +167,7 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
 
         {/* 优先级 */}
         <div>
-          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">优先级</label>
+          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t('tasks.priority')}</label>
           <div className="flex gap-2">
             {([3, 2, 1] as TaskPriority[]).map((p) => {
               const cfg = PRIORITY_CONFIG[p];
@@ -197,7 +192,7 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
 
         {/* 截止日期 */}
         <div>
-          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">截止日期</label>
+          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t('tasks.dueDate')}</label>
           <input
             type="date"
             value={dueDate ? dueDate.split("T")[0] : ""}
@@ -212,9 +207,9 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
 
         {/* 创建时间 */}
         <div>
-          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">创建时间</label>
+          <label className="text-xs text-tx-tertiary uppercase tracking-wider mb-1.5 block">{t('tasks.createdAt')}</label>
           <span className="text-sm text-tx-secondary">
-            {format(parseISO(task.createdAt + (task.createdAt.endsWith("Z") ? "" : "Z")), "yyyy-MM-dd HH:mm", { locale: zhCN })}
+            {format(parseISO(task.createdAt + (task.createdAt.endsWith("Z") ? "" : "Z")), "yyyy-MM-dd HH:mm", { locale: dateLocale })}
           </span>
         </div>
       </div>
@@ -226,7 +221,7 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm text-accent-danger border border-accent-danger/30 hover:bg-accent-danger/10 transition-colors"
         >
           <Trash2 size={14} />
-          删除任务
+          {t('tasks.deleteTask')}
         </button>
       </div>
     </motion.div>
@@ -235,6 +230,16 @@ const TaskDetail = React.forwardRef<HTMLDivElement, {
 
 /* ===== 主组件 ===== */
 export default function TaskCenter() {
+  const { t } = useTranslation();
+
+  const FILTERS: { key: TaskFilter; label: string; icon: React.ReactNode }[] = [
+    { key: "all", label: t('tasks.allTasks'), icon: <Inbox size={16} /> },
+    { key: "today", label: t('tasks.today'), icon: <CalendarDays size={16} /> },
+    { key: "week", label: t('tasks.next7Days'), icon: <Calendar size={16} /> },
+    { key: "overdue", label: t('tasks.overdue'), icon: <AlertTriangle size={16} /> },
+    { key: "completed", label: t('tasks.completed'), icon: <CheckCheck size={16} /> },
+  ];
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stats, setStats] = useState<TaskStats | null>(null);
   const [filter, setFilter] = useState<TaskFilter>("all");
@@ -332,11 +337,11 @@ export default function TaskCenter() {
         <div className="px-4 py-4 border-b border-app-border">
           <div className="flex items-center gap-2">
             <ListTodo size={18} className="text-accent-primary" />
-            <h2 className="text-sm font-bold text-tx-primary">待办事项</h2>
+            <h2 className="text-sm font-bold text-tx-primary">{t('tasks.title')}</h2>
           </div>
           {stats && (
             <div className="mt-2 text-xs text-tx-tertiary">
-              {stats.pending} 待完成 · {stats.completed} 已完成
+              {t('tasks.pendingCount', { pending: stats.pending, completed: stats.completed })}
             </div>
           )}
         </div>
@@ -373,7 +378,7 @@ export default function TaskCenter() {
         {/* Header */}
         <div className="px-6 py-4 border-b border-app-border">
           <h1 className="text-lg font-bold text-tx-primary">
-            {FILTERS.find((f) => f.key === filter)?.label || "全部任务"}
+            {FILTERS.find((f) => f.key === filter)?.label || t('tasks.allTasks')}
           </h1>
         </div>
 
@@ -386,7 +391,7 @@ export default function TaskCenter() {
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              placeholder="添加新任务，按 Enter 保存..."
+              placeholder={t('tasks.addTaskPlaceholder')}
               className="flex-1 bg-transparent text-sm text-tx-primary placeholder:text-tx-tertiary focus:outline-none"
             />
           </div>
@@ -396,12 +401,12 @@ export default function TaskCenter() {
         <div className="flex-1 overflow-auto px-6 py-3">
           {isLoading ? (
             <div className="flex items-center justify-center h-32 text-tx-tertiary text-sm">
-              加载中...
+              {t('common.loading')}
             </div>
           ) : tasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 text-tx-tertiary">
               <CheckCheck size={36} className="mb-3 opacity-40" />
-              <span className="text-sm">暂无任务</span>
+              <span className="text-sm">{t('tasks.noTasks')}</span>
             </div>
           ) : (
             <div className="space-y-2">

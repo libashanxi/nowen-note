@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Shield, Key, Loader2, CheckCircle2, Eye, EyeOff, User } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export default function SecuritySettings() {
+  const { t } = useTranslation();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -26,16 +28,16 @@ export default function SecuritySettings() {
     setError("");
 
     if (!currentPassword) {
-      return triggerShake("必须提供当前密码");
+      return triggerShake(t('securitySettings.currentPasswordRequired'));
     }
     if (!newPassword && !newUsername) {
-      return triggerShake("请填写要修改的用户名或新密码");
+      return triggerShake(t('securitySettings.noChanges'));
     }
     if (newPassword && newPassword.length < 6) {
-      return triggerShake("新密码长度不能少于6位");
+      return triggerShake(t('securitySettings.passwordTooShort'));
     }
     if (newPassword && newPassword !== confirmPassword) {
-      return triggerShake("两次输入的新密码不一致");
+      return triggerShake(t('securitySettings.passwordNotMatch'));
     }
 
     setIsLoading(true);
@@ -54,7 +56,7 @@ export default function SecuritySettings() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "更新失败");
+        throw new Error(data.error || t('securitySettings.updateFailed'));
       }
 
       setSuccess(true);
@@ -72,8 +74,8 @@ export default function SecuritySettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">账号与安全</h3>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">修改用户名或密码需验证当前密码</p>
+        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">{t('securitySettings.title')}</h3>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">{t('securitySettings.description')}</p>
       </div>
 
       <motion.form
@@ -85,7 +87,7 @@ export default function SecuritySettings() {
         {/* 当前密码 */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            当前密码 <span className="text-red-500">*</span>
+            {t('securitySettings.currentPassword')} <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -98,7 +100,7 @@ export default function SecuritySettings() {
               className={`block w-full pl-10 pr-10 py-2.5 border rounded-xl bg-zinc-50/50 dark:bg-zinc-800/50 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 dark:focus:border-indigo-500 transition-all text-sm ${
                 error && !currentPassword ? "border-red-500/50 dark:border-red-500/50" : "border-zinc-200 dark:border-zinc-700"
               }`}
-              placeholder="输入当前密码以验证身份"
+              placeholder={t('securitySettings.currentPasswordPlaceholder')}
               autoComplete="current-password"
               required
             />
@@ -117,7 +119,7 @@ export default function SecuritySettings() {
 
         {/* 新用户名 */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">新用户名 (可选)</label>
+          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('securitySettings.newUsername')}</label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <User className="h-4 w-4 text-zinc-400 dark:text-zinc-500" />
@@ -127,7 +129,7 @@ export default function SecuritySettings() {
               value={newUsername}
               onChange={(e) => setNewUsername(e.target.value)}
               className="block w-full pl-10 pr-3 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl bg-zinc-50/50 dark:bg-zinc-800/50 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 dark:focus:border-indigo-500 transition-all text-sm"
-              placeholder="留空则不修改"
+              placeholder={t('securitySettings.newUsernamePlaceholder')}
               autoComplete="username"
             />
           </div>
@@ -135,7 +137,7 @@ export default function SecuritySettings() {
 
         {/* 新密码 */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">新密码 (可选)</label>
+          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('securitySettings.newPassword')}</label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Key className="h-4 w-4 text-zinc-400 dark:text-zinc-500" />
@@ -145,7 +147,7 @@ export default function SecuritySettings() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               className="block w-full pl-10 pr-10 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl bg-zinc-50/50 dark:bg-zinc-800/50 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 dark:focus:border-indigo-500 transition-all text-sm"
-              placeholder="至少6位，留空则不修改"
+              placeholder={t('securitySettings.newPasswordPlaceholder')}
               autoComplete="new-password"
             />
             <button
@@ -168,7 +170,7 @@ export default function SecuritySettings() {
               transition={{ duration: 0.2 }}
               className="space-y-1.5 overflow-hidden"
             >
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">确认新密码</label>
+              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('securitySettings.confirmPassword')}</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Key className="h-4 w-4 text-zinc-400 dark:text-zinc-500" />
@@ -180,13 +182,13 @@ export default function SecuritySettings() {
                   className={`block w-full pl-10 pr-3 py-2.5 border rounded-xl bg-zinc-50/50 dark:bg-zinc-800/50 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 dark:focus:border-indigo-500 transition-all text-sm ${
                     confirmPassword && newPassword !== confirmPassword ? "border-red-500/50 dark:border-red-500/50" : "border-zinc-200 dark:border-zinc-700"
                   }`}
-                  placeholder="再次输入新密码"
+                  placeholder={t('securitySettings.confirmPasswordPlaceholder')}
                   autoComplete="new-password"
                   required={!!newPassword}
                 />
               </div>
               {confirmPassword && newPassword !== confirmPassword && (
-                <p className="text-xs text-red-500 dark:text-red-400">两次输入的密码不一致</p>
+                <p className="text-xs text-red-500 dark:text-red-400">{t('securitySettings.passwordMismatch')}</p>
               )}
             </motion.div>
           )}
@@ -222,12 +224,12 @@ export default function SecuritySettings() {
           ) : success ? (
             <>
               <CheckCircle2 className="w-4 h-4 mr-2" />
-              修改成功，请重新登录...
+              {t('securitySettings.successMessage')}
             </>
           ) : (
             <>
               <Key className="w-4 h-4 mr-2" />
-              保存安全设置
+              {t('securitySettings.saveButton')}
             </>
           )}
         </button>

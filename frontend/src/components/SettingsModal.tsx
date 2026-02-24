@@ -1,21 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Palette, Shield, Database, X, Settings, Camera, Save, Loader2, Trash2, Upload, Type, Check, ChevronDown } from "lucide-react";
+import { Palette, Shield, Database, X, Settings, Camera, Save, Loader2, Trash2, Upload, Type, Check, ChevronDown, Globe } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import ThemeToggle from "@/components/ThemeToggle";
 import SecuritySettings from "@/components/SecuritySettings";
 import DataManager from "@/components/DataManager";
-import { useSiteSettings, BUILTIN_FONTS } from "@/hooks/useSiteSettings";
+import { useSiteSettings, BUILTIN_FONTS, getBuiltinFontName } from "@/hooks/useSiteSettings";
 import { api } from "@/lib/api";
 import { CustomFont } from "@/types";
 import { cn } from "@/lib/utils";
 
-const SETTING_TABS = [
-  { id: "appearance", label: "外观设置", icon: Palette },
-  { id: "security", label: "账号安全", icon: Shield },
-  { id: "data", label: "数据管理", icon: Database },
-] as const;
-
-type TabId = (typeof SETTING_TABS)[number]["id"];
+type TabId = "appearance" | "security" | "data";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -23,6 +18,7 @@ interface SettingsModalProps {
 }
 
 function AppearancePanel() {
+  const { t, i18n } = useTranslation();
   const { siteConfig, updateSiteConfig, updateEditorFont } = useSiteSettings();
   const [title, setTitle] = useState(siteConfig.title);
   const [previewIcon, setPreviewIcon] = useState(siteConfig.favicon);
@@ -35,6 +31,7 @@ function AppearancePanel() {
   const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const [isSwitchingFont, setIsSwitchingFont] = useState(false);
   const fontFileRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -64,7 +61,7 @@ function AppearancePanel() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 1024 * 1024) {
-      setSaveMessage("图标文件不能超过 1MB");
+      setSaveMessage(t('settings.iconTooLarge'));
       return;
     }
     const reader = new FileReader();
@@ -86,10 +83,10 @@ function AppearancePanel() {
     setSaveMessage("");
     try {
       await updateSiteConfig(title.trim(), previewIcon);
-      setSaveMessage("保存成功");
+      setSaveMessage(t('settings.saveSuccess'));
       setTimeout(() => setSaveMessage(""), 2000);
     } catch {
-      setSaveMessage("保存失败，请重试");
+      setSaveMessage(t('settings.saveFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -100,9 +97,9 @@ function AppearancePanel() {
   // 当前字体的显示名
   const currentFontName = (() => {
     const builtin = BUILTIN_FONTS.find(f => f.id === siteConfig.editorFontFamily);
-    if (builtin) return builtin.name;
+    if (builtin) return getBuiltinFontName(builtin);
     const custom = customFonts.find(f => f.id === siteConfig.editorFontFamily);
-    return custom ? custom.name : "Inter (默认)";
+    return custom ? custom.name : t('settings.interDefault');
   })();
 
   const handleSelectFont = async (fontId: string) => {
@@ -119,16 +116,19 @@ function AppearancePanel() {
     if (!files || files.length === 0) return;
     setIsUploading(true);
     setUploadMessage("");
+    setUploadSuccess(false);
     try {
       const result = await api.uploadFonts(files);
       const msgs: string[] = [];
-      if (result.uploaded.length > 0) msgs.push(`成功导入 ${result.uploaded.length} 个字体`);
+      if (result.uploaded.length > 0) msgs.push(t('settings.fontUploadSuccess', { count: result.uploaded.length }));
       if (result.errors.length > 0) msgs.push(result.errors.join("; "));
       setUploadMessage(msgs.join(" · "));
+      setUploadSuccess(result.uploaded.length > 0);
       await loadFonts();
-      setTimeout(() => setUploadMessage(""), 4000);
+      setTimeout(() => { setUploadMessage(""); setUploadSuccess(false); }, 4000);
     } catch (err: any) {
-      setUploadMessage(err.message || "上传失败");
+      setUploadMessage(err.message || t('settings.fontUploadFailed'));
+      setUploadSuccess(false);
     } finally {
       setIsUploading(false);
       if (fontFileRef.current) fontFileRef.current.value = "";
@@ -150,13 +150,13 @@ function AppearancePanel() {
     <div className="space-y-6">
       {/* 站点标识 */}
       <div>
-        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">站点标识</h3>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">自定义你的工作台名称和浏览器标签页图标</p>
+        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">{t('settings.siteIdentity')}</h3>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">{t('settings.siteIdentityDesc')}</p>
 
         <div className="flex flex-col sm:flex-row gap-6 items-start">
           {/* Logo 上传区域 */}
           <div className="flex flex-col items-center gap-2.5">
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">站点图标</span>
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t('settings.siteIcon')}</span>
             <div
               className="relative w-20 h-20 rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center overflow-hidden group cursor-pointer hover:border-accent-primary transition-colors"
               onClick={() => fileInputRef.current?.click()}
@@ -166,7 +166,7 @@ function AppearancePanel() {
               ) : (
                 <div className="flex flex-col items-center gap-1 text-zinc-400 dark:text-zinc-600">
                   <Camera size={20} />
-                  <span className="text-[10px]">上传</span>
+                  <span className="text-[10px]">{t('settings.upload')}</span>
                 </div>
               )}
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
@@ -187,7 +187,7 @@ function AppearancePanel() {
                   onClick={handleRemoveIcon}
                   className="text-[10px] text-red-500 hover:text-red-400 transition-colors"
                 >
-                  移除
+                  {t('settings.remove')}
                 </button>
               )}
             </div>
@@ -196,14 +196,14 @@ function AppearancePanel() {
           {/* 站点名称 */}
           <div className="flex-1 space-y-3 w-full">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">站点名称</label>
+              <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t('settings.siteName')}</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => { setTitle(e.target.value); setSaveMessage(""); }}
                 maxLength={20}
                 className="w-full px-3 py-2 bg-transparent border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-accent-primary/40 focus:border-accent-primary outline-none transition-all placeholder:text-zinc-400"
-                placeholder="例如: Admin 的知识库"
+                placeholder={t('settings.siteNamePlaceholder')}
               />
               <p className="text-[10px] text-zinc-400 dark:text-zinc-500 text-right">{title.length} / 20</p>
             </div>
@@ -215,10 +215,10 @@ function AppearancePanel() {
                 className="flex items-center justify-center gap-1.5 px-4 py-1.5 bg-accent-primary hover:bg-accent-primary/90 text-white rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                保存更改
+                {t('settings.saveChanges')}
               </button>
               {saveMessage && (
-                <span className={`text-xs ${saveMessage.includes("成功") ? "text-emerald-500" : "text-red-500"}`}>
+                <span className={`text-xs ${saveMessage === t('settings.saveSuccess') ? "text-emerald-500" : "text-red-500"}`}>
                   {saveMessage}
                 </span>
               )}
@@ -232,15 +232,15 @@ function AppearancePanel() {
 
       {/* 外观与主题 */}
       <div>
-        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">外观与主题</h3>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">自定义视觉体验</p>
+        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">{t('settings.appearanceTheme')}</h3>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">{t('settings.appearanceThemeDesc')}</p>
       </div>
 
       <div className="space-y-4">
         <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
           <div>
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">主题模式</span>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">选择浅色、深色或跟随系统</p>
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('settings.themeMode')}</span>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{t('settings.themeModeDesc')}</p>
           </div>
           <ThemeToggle />
         </div>
@@ -249,8 +249,8 @@ function AppearancePanel() {
         <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">编辑器字体</span>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">选择内置字体或导入自定义字体包</p>
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('settings.editorFont')}</span>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{t('settings.editorFontDesc')}</p>
             </div>
             {isSwitchingFont && <Loader2 size={14} className="animate-spin text-accent-primary" />}
           </div>
@@ -279,7 +279,7 @@ function AppearancePanel() {
                 >
                   {/* 内置字体 */}
                   <div className="px-2 pt-2 pb-1">
-                    <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2">内置字体</span>
+                    <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2">{t('settings.builtinFonts')}</span>
                   </div>
                   {BUILTIN_FONTS.map(font => (
                     <button
@@ -287,7 +287,7 @@ function AppearancePanel() {
                       onClick={() => handleSelectFont(font.id)}
                       className="w-full flex items-center justify-between px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
                     >
-                      <span style={{ fontFamily: font.family }}>{font.name}</span>
+                      <span style={{ fontFamily: font.family }}>{getBuiltinFontName(font)}</span>
                       {siteConfig.editorFontFamily === font.id && <Check size={14} className="text-accent-primary" />}
                     </button>
                   ))}
@@ -297,7 +297,7 @@ function AppearancePanel() {
                     <>
                       <div className="h-px bg-zinc-100 dark:bg-zinc-800 mx-2 my-1" />
                       <div className="px-2 pt-1 pb-1">
-                        <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2">已导入字体</span>
+                        <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2">{t('settings.importedFonts')}</span>
                       </div>
                       {customFonts.map(font => (
                         <div
@@ -316,7 +316,7 @@ function AppearancePanel() {
                             <button
                               onClick={(e) => { e.stopPropagation(); handleDeleteFont(font.id); }}
                               className="opacity-0 group-hover:opacity-100 p-0.5 text-zinc-400 hover:text-red-500 transition-all"
-                              title="删除字体"
+                              title={t('settings.deleteFont')}
                             >
                               <Trash2 size={12} />
                             </button>
@@ -338,9 +338,9 @@ function AppearancePanel() {
               className="flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-xs text-zinc-600 dark:text-zinc-400 hover:border-accent-primary/50 hover:text-accent-primary transition-colors disabled:opacity-50"
             >
               {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-              导入字体包
+              {t('settings.importFont')}
             </button>
-            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">支持 OTF / OTC / TTC / TTF / WOFF2 · 可批量选择</span>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">{t('settings.importFontHint')}</span>
             <input
               type="file"
               ref={fontFileRef}
@@ -352,7 +352,7 @@ function AppearancePanel() {
           </div>
 
           {uploadMessage && (
-            <p className={cn("text-xs", uploadMessage.includes("成功") ? "text-emerald-500" : "text-amber-500")}>{uploadMessage}</p>
+            <p className={cn("text-xs", uploadSuccess ? "text-emerald-500" : "text-amber-500")}>{uploadMessage}</p>
           )}
 
           {/* 字体预览 */}
@@ -361,20 +361,49 @@ function AppearancePanel() {
             style={{ fontFamily: "var(--editor-font-family)" }}
           >
             <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
-              The quick brown fox jumps over the lazy dog.
+              {t('settings.fontPreviewEn')}
             </p>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed mt-1">
-              我能吞下玻璃而不伤身体。0123456789
+              {t('settings.fontPreviewZh')}
             </p>
           </div>
         </div>
 
         <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
           <div>
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">侧边栏宽度</span>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">260px · 标准</p>
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('settings.sidebarWidth')}</span>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{t('settings.sidebarWidthDesc')}</p>
           </div>
-          <span className="text-xs text-zinc-400 dark:text-zinc-600 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800">标准</span>
+          <span className="text-xs text-zinc-400 dark:text-zinc-600 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800">{t('settings.standard')}</span>
+        </div>
+
+        {/* 语言切换 */}
+        <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
+          <div className="flex items-center gap-2">
+            <Globe size={16} className="text-zinc-500 dark:text-zinc-400" />
+            <div>
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('language.label')}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-zinc-100 dark:bg-zinc-800">
+            {([
+              { code: "zh-CN", label: t('language.zh') },
+              { code: "en", label: t('language.en') },
+            ] as const).map(lang => (
+              <button
+                key={lang.code}
+                onClick={() => i18n.changeLanguage(lang.code)}
+                className={cn(
+                  "relative px-3 py-1 rounded-md text-xs font-medium transition-colors",
+                  i18n.language === lang.code
+                    ? "bg-white dark:bg-zinc-700 text-accent-primary shadow-sm"
+                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                )}
+              >
+                {lang.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -383,8 +412,15 @@ function AppearancePanel() {
 
 const SettingsModal = React.forwardRef<HTMLDivElement, SettingsModalProps>(
   function SettingsModal({ onClose, defaultTab = "appearance" }, ref) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
   const { siteConfig } = useSiteSettings();
+
+  const SETTING_TABS = [
+    { id: "appearance" as const, label: t('settings.appearance'), icon: Palette },
+    { id: "security" as const, label: t('settings.security'), icon: Shield },
+    { id: "data" as const, label: t('settings.dataManagement'), icon: Database },
+  ];
 
   return (
     <motion.div
@@ -416,7 +452,7 @@ const SettingsModal = React.forwardRef<HTMLDivElement, SettingsModalProps>(
         <div className="w-56 flex-shrink-0 bg-zinc-50 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-800 p-4 flex flex-col">
           <div className="flex items-center gap-2 mb-6 px-2">
             <Settings className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-            <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">设置</span>
+            <span className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{t('settings.title')}</span>
           </div>
 
           <nav className="flex-1 space-y-0.5">

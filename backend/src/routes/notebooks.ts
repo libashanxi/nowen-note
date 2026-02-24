@@ -9,8 +9,17 @@ app.get("/", (c) => {
   const db = getDb();
   const userId = c.req.header("X-User-Id") || "demo";
   const notebooks = db.prepare(`
-    SELECT * FROM notebooks WHERE userId = ? ORDER BY sortOrder ASC
-  `).all(userId);
+    SELECT nb.*, COALESCE(nc.noteCount, 0) AS noteCount
+    FROM notebooks nb
+    LEFT JOIN (
+      SELECT notebookId, COUNT(*) AS noteCount
+      FROM notes
+      WHERE userId = ? AND isTrashed = 0
+      GROUP BY notebookId
+    ) nc ON nb.id = nc.notebookId
+    WHERE nb.userId = ?
+    ORDER BY nb.sortOrder ASC
+  `).all(userId, userId);
   return c.json(notebooks);
 });
 

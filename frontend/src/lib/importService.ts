@@ -1,4 +1,5 @@
 import { api } from "./api";
+import i18n from "i18next";
 
 export interface ImportFileInfo {
   name: string;
@@ -133,12 +134,12 @@ export async function importNotes(
   const selected = fileInfos.filter((f) => f.selected);
 
   if (selected.length === 0) {
-    onProgress?.({ phase: "error", current: 0, total: 0, message: "没有选择要导入的文件" });
+    onProgress?.({ phase: "error", current: 0, total: 0, message: i18n.t('dataManager.noFilesSelected') });
     return { success: false, count: 0 };
   }
 
   try {
-    onProgress?.({ phase: "uploading", current: 0, total: selected.length, message: "正在上传..." });
+    onProgress?.({ phase: "uploading", current: 0, total: selected.length, message: i18n.t('dataManager.uploadingProgress') });
 
     const notes = selected.map((f) => {
       const html = markdownToSimpleHtml(f.content);
@@ -161,7 +162,7 @@ export async function importNotes(
       phase: "done",
       current: result.count,
       total: selected.length,
-      message: `成功导入 ${result.count} 篇笔记`,
+      message: i18n.t('dataManager.importSuccessCount', { count: result.count }),
     });
 
     return { success: true, count: result.count };
@@ -171,7 +172,7 @@ export async function importNotes(
       phase: "error",
       current: 0,
       total: selected.length,
-      message: `导入失败: ${(error as Error).message}`,
+      message: i18n.t('dataManager.importFailed', { error: (error as Error).message }),
     });
     return { success: false, count: 0 };
   }

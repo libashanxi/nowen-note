@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/Sidebar";
 import NoteList from "@/components/NoteList";
 import EditorPane from "@/components/EditorPane";
@@ -97,6 +98,7 @@ function MobileTopBar() {
 function AuthGate() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const { t } = useTranslation();
 
   useEffect(() => {
     const token = localStorage.getItem("nowen-token");
@@ -134,7 +136,7 @@ function AuthGate() {
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950 transition-colors">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-zinc-400 dark:text-zinc-500">正在验证身份...</p>
+          <p className="text-sm text-zinc-400 dark:text-zinc-500">{t('auth.verifying')}</p>
         </div>
       </div>
     );

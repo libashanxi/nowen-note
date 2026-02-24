@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Lock, User, BookOpen } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface LoginPageProps {
   onLogin: (token: string, user: any) => void;
@@ -11,6 +12,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const { t } = useTranslation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +29,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "登录失败");
+        setError(data.error || t('auth.loginFailed'));
         setIsLoading(false);
         return;
       }
@@ -36,7 +38,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       localStorage.setItem("nowen-token", data.token);
       onLogin(data.token, data.user);
     } catch {
-      setError("网络错误，请检查服务是否运行");
+      setError(t('auth.networkError'));
       setIsLoading(false);
     }
   };
@@ -67,10 +69,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               <BookOpen size={24} className="text-indigo-600 dark:text-indigo-400" />
             </motion.div>
             <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
-              nowen-note
+              {t('auth.appTitle')}
             </h1>
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1.5">
-              私有化知识库 · 欢迎回来
+              {t('auth.subtitle')}
             </p>
           </div>
 
@@ -78,7 +80,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             {/* 用户名 */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                用户名
+                {t('auth.username')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -89,7 +91,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="block w-full pl-10 pr-3 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl bg-zinc-50/50 dark:bg-zinc-800/50 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500 dark:focus:border-indigo-500 transition-all text-sm"
-                  placeholder="请输入用户名"
+                  placeholder={t('auth.usernamePlaceholder')}
                   autoComplete="username"
                   autoFocus
                   required
@@ -100,7 +102,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             {/* 密码 */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                密码
+                {t('auth.password')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -139,14 +141,14 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                "登录工作台"
+                t('auth.loginButton')
               )}
             </button>
           </form>
 
           {/* 底部提示 */}
           <p className="text-center text-xs text-zinc-400 dark:text-zinc-600 mt-6">
-            默认账号: admin / admin123
+            {t('auth.defaultCredentials')}
           </p>
         </div>
       </motion.div>

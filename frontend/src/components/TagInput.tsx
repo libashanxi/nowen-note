@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Hash, Plus } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useApp, useAppActions } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { Tag } from "@/types";
@@ -12,6 +13,7 @@ interface TagInputProps {
 }
 
 export default function TagInput({ noteId, noteTags, onTagsChange }: TagInputProps) {
+  const { t } = useTranslation();
   const { state } = useApp();
   const actions = useAppActions();
   const [inputValue, setInputValue] = useState("");
@@ -179,7 +181,7 @@ export default function TagInput({ noteId, noteTags, onTagsChange }: TagInputPro
           onBlur={handleBlur}
           disabled={isAdding}
           className="flex-1 min-w-[80px] bg-transparent text-[11px] text-tx-primary outline-none placeholder:text-tx-tertiary"
-          placeholder={noteTags.length === 0 ? "添加标签..." : ""}
+          placeholder={noteTags.length === 0 ? t('tags.addTagPlaceholder') : ""}
         />
       </div>
 
@@ -226,7 +228,7 @@ export default function TagInput({ noteId, noteTags, onTagsChange }: TagInputPro
               >
                 <Plus size={12} className="shrink-0" />
                 <span>
-                  创建标签 <strong>"{inputValue.trim()}"</strong>
+                  {t('tags.createTag', { name: inputValue.trim() })}
                 </span>
               </button>
             )}

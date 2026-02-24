@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Note, Tag } from "@/types";
 import TagInput from "@/components/TagInput";
+import { useTranslation } from "react-i18next";
 
 const lowlight = createLowlight(common);
 
@@ -90,6 +91,7 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
   const titleRef = useRef<HTMLInputElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   const [wordStats, setWordStats] = useState({ chars: 0, charsNoSpace: 0, words: 0 });
+  const { t, i18n } = useTranslation();
 
   const editorScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -110,7 +112,7 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         heading: { levels: [1, 2, 3] },
       }),
       Placeholder.configure({
-        placeholder: "开始写点什么...",
+        placeholder: t('tiptap.placeholder'),
         emptyEditorClass: "is-editor-empty",
       }),
       Image.configure({
@@ -223,10 +225,10 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex items-center gap-0.5 px-4 py-2 border-b border-app-border bg-app-surface/50 md:flex-wrap overflow-x-auto hide-scrollbar touch-pan-x transition-colors">
-        <ToolbarButton onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title="撤销">
+        <ToolbarButton onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} title={t('tiptap.undo')}>
           <Undo size={iconSize} />
         </ToolbarButton>
-        <ToolbarButton onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title="重做">
+        <ToolbarButton onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} title={t('tiptap.redo')}>
           <Redo size={iconSize} />
         </ToolbarButton>
 
@@ -235,21 +237,21 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
           isActive={editor.isActive("heading", { level: 1 })}
-          title="标题 1"
+          title={t('tiptap.heading1')}
         >
           <Heading1 size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
           isActive={editor.isActive("heading", { level: 2 })}
-          title="标题 2"
+          title={t('tiptap.heading2')}
         >
           <Heading2 size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
           isActive={editor.isActive("heading", { level: 3 })}
-          title="标题 3"
+          title={t('tiptap.heading3')}
         >
           <Heading3 size={iconSize} />
         </ToolbarButton>
@@ -259,42 +261,42 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
           isActive={editor.isActive("bold")}
-          title="加粗"
+          title={t('tiptap.bold')}
         >
           <Bold size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleItalic().run()}
           isActive={editor.isActive("italic")}
-          title="斜体"
+          title={t('tiptap.italic')}
         >
           <Italic size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleUnderline().run()}
           isActive={editor.isActive("underline")}
-          title="下划线"
+          title={t('tiptap.underline')}
         >
           <UnderlineIcon size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleStrike().run()}
           isActive={editor.isActive("strike")}
-          title="删除线"
+          title={t('tiptap.strikethrough')}
         >
           <Strikethrough size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleHighlight().run()}
           isActive={editor.isActive("highlight")}
-          title="高亮"
+          title={t('tiptap.highlight')}
         >
           <Highlighter size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleCode().run()}
           isActive={editor.isActive("code")}
-          title="行内代码"
+          title={t('tiptap.inlineCode')}
         >
           <Code size={iconSize} />
         </ToolbarButton>
@@ -304,21 +306,21 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBulletList().run()}
           isActive={editor.isActive("bulletList")}
-          title="无序列表"
+          title={t('tiptap.bulletList')}
         >
           <List size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
           isActive={editor.isActive("orderedList")}
-          title="有序列表"
+          title={t('tiptap.orderedList')}
         >
           <ListOrdered size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleTaskList().run()}
           isActive={editor.isActive("taskList")}
-          title="任务列表"
+          title={t('tiptap.taskList')}
         >
           <CheckSquare size={iconSize} />
         </ToolbarButton>
@@ -328,24 +330,24 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBlockquote().run()}
           isActive={editor.isActive("blockquote")}
-          title="引用"
+          title={t('tiptap.blockquote')}
         >
           <Quote size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleCodeBlock().run()}
           isActive={editor.isActive("codeBlock")}
-          title="代码块"
+          title={t('tiptap.codeBlock')}
         >
           <FileCode size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
-          title="分割线"
+          title={t('tiptap.horizontalRule')}
         >
           <Minus size={iconSize} />
         </ToolbarButton>
-        <ToolbarButton onClick={handleImageUpload} title="插入图片">
+        <ToolbarButton onClick={handleImageUpload} title={t('tiptap.insertImage')}>
           <ImagePlus size={iconSize} />
         </ToolbarButton>
       </div>
@@ -356,17 +358,17 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
           ref={titleRef}
           defaultValue={note.title}
           onChange={handleTitleChange}
-          placeholder="笔记标题"
+          placeholder={t('tiptap.titlePlaceholder')}
           className="w-full bg-transparent text-2xl font-bold text-tx-primary placeholder:text-tx-tertiary focus:outline-none"
         />
         <div className="flex items-center gap-3 mt-2 text-[10px] text-tx-tertiary">
-          <span>版本 {note.version}</span>
+          <span>{t('tiptap.version')}{note.version}</span>
           <span>·</span>
-          <span>更新于 {new Date(note.updatedAt + "Z").toLocaleString("zh-CN")}</span>
+          <span>{t('tiptap.updatedAt')}{new Date(note.updatedAt + "Z").toLocaleString()}</span>
           <span>·</span>
-          <span>{wordStats.words} 词</span>
+          <span>{wordStats.words}{t('tiptap.words')}</span>
           <span>·</span>
-          <span>{wordStats.charsNoSpace} 字符</span>
+          <span>{wordStats.charsNoSpace}{t('tiptap.chars')}</span>
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import { useApp, useAppActions, SyncStatus } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Tag, Notebook } from "@/types";
+import { useTranslation } from "react-i18next";
 
 export default function EditorPane() {
   const { state } = useApp();
@@ -19,6 +20,7 @@ export default function EditorPane() {
   const [showOutline, setShowOutline] = useState(false);
   const [headings, setHeadings] = useState<HeadingItem[]>([]);
   const scrollToRef = useRef<((pos: number) => void) | null>(null);
+  const { t } = useTranslation();
 
   const handleUpdate = useCallback(async (data: { content: string; contentText: string; title: string }) => {
     if (!activeNote) return;
@@ -82,6 +84,7 @@ export default function EditorPane() {
     if (!activeNote) return;
     await api.updateNote(activeNote.id, { isTrashed: 1 } as any);
     actions.setActiveNote(null);
+    actions.refreshNotebooks();
   }, [activeNote, actions]);
 
   const handleTagsChange = useCallback((tags: Tag[]) => {
@@ -96,6 +99,7 @@ export default function EditorPane() {
     actions.setActiveNote(updated);
     actions.updateNoteInList({ id: updated.id, notebookId: updated.notebookId });
     setShowMoveDropdown(false);
+    actions.refreshNotebooks();
   }, [activeNote, actions]);
 
   if (!activeNote) {
@@ -103,8 +107,8 @@ export default function EditorPane() {
       <div className="flex-1 flex items-center justify-center bg-app-bg transition-colors">
         <div className="text-center hidden md:block">
           <div className="text-6xl mb-4 opacity-10">✍️</div>
-          <p className="text-tx-tertiary text-sm">选择一条笔记开始编辑</p>
-          <p className="text-tx-tertiary text-xs mt-1">或创建新笔记</p>
+          <p className="text-tx-tertiary text-sm">{t('editor.selectNote')}</p>
+          <p className="text-tx-tertiary text-xs mt-1">{t('editor.orCreateNew')}</p>
         </div>
       </div>
     );
@@ -125,7 +129,7 @@ export default function EditorPane() {
           className="flex items-center text-accent-primary py-1 px-1 -ml-1 rounded-md"
         >
           <ChevronLeft size={22} />
-          <span className="text-sm">返回</span>
+          <span className="text-sm">{t('editor.back')}</span>
         </button>
         <div className="ml-auto flex items-center gap-1">
           <SyncIndicator syncStatus={syncStatus} lastSyncedAt={lastSyncedAt} onManualSync={handleManualSync} />
@@ -144,7 +148,7 @@ export default function EditorPane() {
           <button
             onClick={() => setShowMoveDropdown(!showMoveDropdown)}
             className="flex items-center gap-1.5 text-xs text-tx-tertiary hover:text-tx-secondary transition-colors rounded-md px-1.5 py-1 hover:bg-app-hover"
-            title="移动到其他笔记本"
+            title={t('editor.moveToNotebook')}
           >
             <span>
               {state.notebooks.find((n) => n.id === activeNote.notebookId)?.icon}{" "}
@@ -161,7 +165,7 @@ export default function EditorPane() {
                 style={{ animation: "contextMenuIn 0.12s ease-out" }}
               >
                 <div className="px-3 py-1.5 text-[10px] font-medium text-tx-tertiary border-b border-app-border mb-1">
-                  移动到...
+                  {t('editor.moveToLabel')}
                 </div>
                 {state.notebooks.map((nb) => (
                   <button
@@ -178,7 +182,7 @@ export default function EditorPane() {
                     <span>{nb.icon || "📁"}</span>
                     <span className="truncate">{nb.name}</span>
                     {nb.id === activeNote.notebookId && (
-                      <span className="ml-auto text-[10px] text-tx-tertiary">当前</span>
+                      <span className="ml-auto text-[10px] text-tx-tertiary">{t('common.current')}</span>
                     )}
                   </button>
                 ))}
@@ -201,25 +205,25 @@ export default function EditorPane() {
           <Button
             variant="ghost" size="icon" className="h-7 w-7"
             onClick={togglePin}
-            title={activeNote.isPinned ? "取消置顶" : "置顶"}
+            title={activeNote.isPinned ? t('editor.unpinTooltip') : t('editor.pinTooltip')}
           >
             <Pin size={14} className={cn(activeNote.isPinned && "text-accent-primary fill-accent-primary")} />
           </Button>
           <Button
             variant="ghost" size="icon" className="h-7 w-7"
             onClick={toggleFavorite}
-            title={activeNote.isFavorite ? "取消收藏" : "收藏"}
+            title={activeNote.isFavorite ? t('editor.unfavoriteTooltip') : t('editor.favoriteTooltip')}
           >
             <Star size={14} className={cn(activeNote.isFavorite && "text-amber-400 fill-amber-400")} />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={moveToTrash} title="移到回收站">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={moveToTrash} title={t('editor.trashTooltip')}>
             <Trash2 size={14} />
           </Button>
           <div className="w-px h-4 bg-app-border mx-1" />
           <Button
             variant="ghost" size="icon" className="h-7 w-7"
             onClick={() => setShowOutline(!showOutline)}
-            title={showOutline ? "隐藏大纲" : "显示大纲"}
+            title={showOutline ? t('editor.hideOutline') : t('editor.showOutline')}
           >
             <ListTree size={14} className={cn(showOutline && "text-accent-primary")} />
           </Button>
@@ -259,12 +263,13 @@ function OutlinePanel({
   onSelect: (pos: number) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="hidden md:flex flex-col w-56 min-w-[200px] border-l border-app-border bg-app-surface/50 transition-colors">
       <div className="flex items-center justify-between px-3 py-2 border-b border-app-border">
         <div className="flex items-center gap-1.5 text-xs font-medium text-tx-secondary">
           <ListTree size={13} className="text-accent-primary" />
-          <span>大纲</span>
+          <span>{t('editor.outline')}</span>
         </div>
         <button
           onClick={onClose}
@@ -277,8 +282,8 @@ function OutlinePanel({
         <div className="py-1">
           {headings.length === 0 ? (
             <div className="px-3 py-6 text-center">
-              <p className="text-[11px] text-tx-tertiary">暂无标题</p>
-              <p className="text-[10px] text-tx-tertiary mt-1">使用 H1-H3 标题来生成大纲</p>
+              <p className="text-[11px] text-tx-tertiary">{t('editor.noHeadings')}</p>
+              <p className="text-[10px] text-tx-tertiary mt-1">{t('editor.noHeadingsHint')}</p>
             </div>
           ) : (
             headings.map((h) => (
@@ -300,7 +305,7 @@ function OutlinePanel({
                   h.level === 2 && "bg-accent-primary/50",
                   h.level === 3 && "bg-tx-tertiary/50",
                 )} />
-                {h.text || "无标题"}
+                {h.text || t('editor.untitled')}
               </button>
             ))
           )}
@@ -320,20 +325,21 @@ function SyncIndicator({
   lastSyncedAt: string | null;
   onManualSync: () => void;
 }) {
+  const { t } = useTranslation();
   const getTooltip = () => {
     switch (syncStatus) {
-      case "saving": return "正在保存...";
-      case "saved": return "所有更改已保存";
-      case "error": return "保存失败，点击重试";
+      case "saving": return t('editor.saving');
+      case "saved": return t('editor.allSaved');
+      case "error": return t('editor.saveFailed');
       default:
         if (lastSyncedAt) {
           const diff = Date.now() - new Date(lastSyncedAt).getTime();
-          if (diff < 10_000) return "刚刚已保存";
-          if (diff < 60_000) return `${Math.floor(diff / 1000)}秒前已保存`;
-          if (diff < 3600_000) return `${Math.floor(diff / 60_000)}分钟前已保存`;
-          return `${Math.floor(diff / 3600_000)}小时前已保存`;
+          if (diff < 10_000) return t('editor.justSaved');
+          if (diff < 60_000) return t('editor.savedSecondsAgo', { count: Math.floor(diff / 1000) });
+          if (diff < 3600_000) return t('editor.savedMinutesAgo', { count: Math.floor(diff / 60_000) });
+          return t('editor.savedHoursAgo', { count: Math.floor(diff / 3600_000) });
         }
-        return "点击同步";
+        return t('editor.clickToSync');
     }
   };
 
@@ -398,10 +404,10 @@ function SyncIndicator({
         syncStatus === "error" && "text-red-500",
         syncStatus === "idle" && "text-tx-tertiary group-hover:text-tx-secondary",
       )}>
-        {syncStatus === "saving" && "保存中..."}
-        {syncStatus === "saved" && "已保存"}
-        {syncStatus === "error" && "保存失败"}
-        {syncStatus === "idle" && (lastSyncedAt ? "已同步" : "同步")}
+        {syncStatus === "saving" && t('editor.savingStatus')}
+        {syncStatus === "saved" && t('editor.savedStatus')}
+        {syncStatus === "error" && t('editor.saveFailedStatus')}
+        {syncStatus === "idle" && (lastSyncedAt ? t('editor.synced') : t('editor.sync'))}
       </span>
     </button>
   );

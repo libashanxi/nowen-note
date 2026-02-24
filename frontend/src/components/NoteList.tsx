@@ -9,19 +9,20 @@ import { useApp, useAppActions } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { NoteListItem, Notebook } from "@/types";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
-function formatTime(dateStr: string) {
+function formatTime(dateStr: string, t: (key: string, opts?: any) => string) {
   const d = new Date(dateStr + "Z");
   const now = new Date();
   const diffMs = now.getTime() - d.getTime();
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "刚刚";
-  if (diffMin < 60) return `${diffMin} 分钟前`;
+  if (diffMin < 1) return t('common.justNow');
+  if (diffMin < 60) return t('common.minutesAgo', { count: diffMin });
   const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} 小时前`;
+  if (diffHr < 24) return t('common.hoursAgo', { count: diffHr });
   const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 7) return `${diffDay} 天前`;
-  return d.toLocaleDateString("zh-CN");
+  if (diffDay < 7) return t('common.daysAgo', { count: diffDay });
+  return d.toLocaleDateString();
 }
 
 /* ===== 笔记本树形选择 ===== */
@@ -49,6 +50,7 @@ function NotebookTreeItem({
   currentNotebookId: string; onSelect: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const { t } = useTranslation();
   const hasChildren = notebook.children && notebook.children.length > 0;
   const isCurrent = notebook.id === currentNotebookId;
   const isSelected = notebook.id === selectedId;
@@ -80,7 +82,7 @@ function NotebookTreeItem({
         )}
         <Folder size={14} className="shrink-0" />
         <span className="truncate flex-1 text-left">{notebook.name}</span>
-        {isCurrent && <span className="text-[10px] text-tx-tertiary shrink-0">当前</span>}
+        {isCurrent && <span className="text-[10px] text-tx-tertiary shrink-0">{t('common.current')}</span>}
         {isSelected && <Check size={14} className="text-accent-primary shrink-0" />}
       </button>
       {hasChildren && expanded && notebook.children!.map((child) => (
@@ -104,6 +106,7 @@ function MoveNoteModal({
   notebooks: Notebook[]; onMove: (notebookId: string) => void; onClose: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { t } = useTranslation();
   const tree = buildNotebookTree(notebooks);
 
   useEffect(() => {
@@ -130,14 +133,14 @@ function MoveNoteModal({
         <div className="flex items-center justify-between px-4 py-3 border-b border-app-border">
           <div className="flex items-center gap-2 min-w-0">
             <FolderInput size={16} className="text-accent-primary shrink-0" />
-            <span className="text-sm font-medium text-tx-primary truncate">移动笔记</span>
+            <span className="text-sm font-medium text-tx-primary truncate">{t('noteList.moveNote')}</span>
           </div>
           <button onClick={onClose} className="p-1 rounded-md hover:bg-app-hover text-tx-tertiary">
             <X size={16} />
           </button>
         </div>
         <div className="px-4 py-2 text-xs text-tx-tertiary truncate border-b border-app-border">
-          {noteTitle || "无标题笔记"}
+          {noteTitle || t('common.untitledNote')}
         </div>
         <ScrollArea className="flex-1 max-h-[300px]">
           <div className="p-2">
@@ -152,19 +155,19 @@ function MoveNoteModal({
               />
             ))}
             {tree.length === 0 && (
-              <p className="text-xs text-tx-tertiary text-center py-4">暂无笔记本</p>
+              <p className="text-xs text-tx-tertiary text-center py-4">{t('noteList.noNotebooks')}</p>
             )}
           </div>
         </ScrollArea>
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-app-border">
-          <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
           <Button
             size="sm"
             disabled={!selectedId || selectedId === currentNotebookId}
             onClick={() => selectedId && onMove(selectedId)}
             className="bg-accent-primary text-white hover:bg-accent-primary/90 disabled:opacity-40"
           >
-            移动
+            {t('noteList.moveButton')}
           </Button>
         </div>
       </div>
@@ -178,6 +181,7 @@ const NoteCard = React.forwardRef<HTMLDivElement, {
   isContextTarget: boolean;
 }>(function NoteCard({ note, isActive, onClick, onContextMenu, isContextTarget }, ref) {
   const preview = note.contentText?.slice(0, 80) || "";
+  const { t } = useTranslation();
 
   return (
     <motion.div
@@ -201,7 +205,7 @@ const NoteCard = React.forwardRef<HTMLDivElement, {
           "text-sm font-medium truncate flex-1",
           isActive ? "text-tx-primary" : "text-tx-secondary"
         )}>
-          {note.title || "无标题笔记"}
+          {note.title || t('common.untitledNote')}
         </h3>
         <div className="flex items-center gap-1 shrink-0">
           {note.isPinned === 1 && <Pin size={12} className="text-accent-primary" />}
@@ -213,7 +217,7 @@ const NoteCard = React.forwardRef<HTMLDivElement, {
       )}
       <div className="flex items-center gap-1.5 mt-1.5 text-tx-tertiary">
         <Clock size={10} />
-        <span className="text-[10px]">{formatTime(note.updatedAt)}</span>
+        <span className="text-[10px]">{formatTime(note.updatedAt, t)}</span>
       </div>
     </motion.div>
   );
@@ -224,6 +228,7 @@ export default function NoteList() {
   const actions = useAppActions();
   const { menu, menuRef, openMenu, closeMenu } = useContextMenu();
   const [moveModal, setMoveModal] = useState<{ noteId: string; noteTitle: string; notebookId: string } | null>(null);
+  const { t } = useTranslation();
 
   const fetchNotes = useCallback(async () => {
     actions.setLoading(true);
@@ -272,9 +277,10 @@ export default function NoteList() {
   const handleCreateNote = async () => {
     const notebookId = state.selectedNotebookId || state.notebooks[0]?.id;
     if (!notebookId) return;
-    const note = await api.createNote({ notebookId, title: "无标题笔记" });
+    const note = await api.createNote({ notebookId, title: t('common.untitledNote') });
     actions.setActiveNote(note);
     await fetchNotes();
+    actions.refreshNotebooks();
   };
 
   // 根据当前视图和目标笔记动态构建菜单项
@@ -286,31 +292,31 @@ export default function NoteList() {
 
     if (isTrashView) {
       return [
-        { id: "restore", label: "恢复笔记", icon: <ArchiveRestore size={14} /> },
+        { id: "restore", label: t('noteList.restoreNote'), icon: <ArchiveRestore size={14} /> },
         { id: "sep1", label: "", separator: true },
-        { id: "delete_permanent", label: "永久删除", icon: <Trash2 size={14} />, danger: true },
+        { id: "delete_permanent", label: t('noteList.permanentDelete'), icon: <Trash2 size={14} />, danger: true },
       ];
     }
 
     return [
       {
         id: "toggle_pin",
-        label: targetNote.isPinned === 1 ? "取消置顶" : "置顶",
+        label: targetNote.isPinned === 1 ? t('noteList.unpin') : t('noteList.pin'),
         icon: targetNote.isPinned === 1 ? <PinOff size={14} /> : <Pin size={14} />,
       },
       {
         id: "toggle_fav",
-        label: targetNote.isFavorite === 1 ? "取消收藏" : "收藏",
+        label: targetNote.isFavorite === 1 ? t('noteList.unfavorite') : t('noteList.favorite'),
         icon: targetNote.isFavorite === 1 ? <StarOff size={14} /> : <Star size={14} />,
       },
       { id: "sep1", label: "", separator: true },
       {
         id: "move",
-        label: "移动到...",
+        label: t('noteList.moveTo'),
         icon: <FolderInput size={14} />,
       },
       { id: "sep2", label: "", separator: true },
-      { id: "trash", label: "移入回收站", icon: <Trash2 size={14} />, danger: true },
+      { id: "trash", label: t('noteList.moveToTrash'), icon: <Trash2 size={14} />, danger: true },
     ];
   };
 
@@ -339,6 +345,7 @@ export default function NoteList() {
         await api.updateNote(targetId, { isTrashed: 1 } as any);
         if (state.activeNote?.id === targetId) actions.setActiveNote(null);
         await fetchNotes();
+        actions.refreshNotebooks();
         break;
       }
       case "move": {
@@ -352,12 +359,14 @@ export default function NoteList() {
       case "restore": {
         await api.updateNote(targetId, { isTrashed: 0 } as any);
         await fetchNotes();
+        actions.refreshNotebooks();
         break;
       }
       case "delete_permanent": {
         await api.deleteNote(targetId);
         if (state.activeNote?.id === targetId) actions.setActiveNote(null);
         await fetchNotes();
+        actions.refreshNotebooks();
         break;
       }
     }
@@ -371,15 +380,16 @@ export default function NoteList() {
     }
     setMoveModal(null);
     await fetchNotes();
+    actions.refreshNotebooks();
   };
 
   const viewTitles: Record<string, string> = {
-    all: "所有笔记",
-    notebook: state.notebooks.find((n) => n.id === state.selectedNotebookId)?.name || "笔记本",
-    favorites: "收藏",
-    trash: "回收站",
-    search: `搜索: ${state.searchQuery}`,
-    tag: `# ${state.tags.find((t) => t.id === state.selectedTagId)?.name || "标签"}`,
+    all: t('noteList.allNotes'),
+    notebook: state.notebooks.find((n) => n.id === state.selectedNotebookId)?.name || t('noteList.notebook'),
+    favorites: t('noteList.favorite'),
+    trash: t('sidebar.trash'),
+    search: t('noteList.search', { query: state.searchQuery }),
+    tag: `# ${state.tags.find((tg) => tg.id === state.selectedTagId)?.name || t('noteList.tag')}`,
   };
 
   return (
@@ -411,7 +421,7 @@ export default function NoteList() {
 
       {/* Count */}
       <div className="px-4 py-1.5">
-        <span className="text-[10px] text-tx-tertiary">{state.notes.length} 条笔记</span>
+        <span className="text-[10px] text-tx-tertiary">{t('common.noteCount', { count: state.notes.length })}</span>
       </div>
 
       {/* List */}
@@ -432,7 +442,7 @@ export default function NoteList() {
           {state.notes.length === 0 && !state.isLoading && (
             <div className="flex flex-col items-center justify-center py-12 text-tx-tertiary">
               <FileText size={32} className="mb-2 opacity-30" />
-              <p className="text-xs">暂无笔记</p>
+              <p className="text-xs">{t('common.noNotes')}</p>
             </div>
           )}
         </div>
@@ -454,7 +464,7 @@ export default function NoteList() {
         menuRef={menuRef}
         items={getMenuItems()}
         onAction={handleMenuAction}
-        header={state.notes.find((n) => n.id === menu.targetId)?.title || "笔记"}
+        header={state.notes.find((n) => n.id === menu.targetId)?.title || t('noteList.note')}
       />
 
       {/* Move Note Modal */}

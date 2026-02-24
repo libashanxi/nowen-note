@@ -2,17 +2,19 @@ import React from "react";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sun, Moon, Monitor } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 
-const themes = [
-  { key: "light", icon: Sun, label: "浅色" },
-  { key: "dark", icon: Moon, label: "深色" },
-  { key: "system", icon: Monitor, label: "跟随系统" },
-] as const;
-
 export default function ThemeToggle() {
+  const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
+
+  const themes = [
+    { key: "light", icon: Sun, label: t('theme.light') },
+    { key: "dark", icon: Moon, label: t('theme.dark') },
+    { key: "system", icon: Monitor, label: t('theme.system') },
+  ] as const;
 
   React.useEffect(() => setMounted(true), []);
   if (!mounted) return null;

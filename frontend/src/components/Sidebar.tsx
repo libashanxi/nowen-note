@@ -16,6 +16,7 @@ import { useSiteSettings } from "@/hooks/useSiteSettings";
 import { api } from "@/lib/api";
 import { Notebook, ViewMode } from "@/types";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 function buildTree(notebooks: Notebook[]): Notebook[] {
   const map = new Map<string, Notebook>();
@@ -93,7 +94,12 @@ function NotebookItem({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="flex-1 truncate">{notebook.name}</span>
+          <>
+            <span className="flex-1 truncate">{notebook.name}</span>
+            {notebook.noteCount !== undefined && notebook.noteCount > 0 && (
+              <span className="text-[10px] text-tx-tertiary tabular-nums shrink-0">{notebook.noteCount}</span>
+            )}
+          </>
         )}
       </motion.div>
       <AnimatePresence>
@@ -127,23 +133,25 @@ function NotebookItem({
   );
 }
 
-// 笔记本右键菜单项
-const notebookMenuItems: ContextMenuItem[] = [
-  { id: "new_note", label: "新建笔记", icon: <FilePlus size={14} /> },
-  { id: "new_sub", label: "新建子笔记本", icon: <FolderPlus size={14} /> },
-  { id: "sep1", label: "", separator: true },
-  { id: "rename", label: "重命名", icon: <Edit2 size={14} /> },
-  { id: "sep2", label: "", separator: true },
-  { id: "delete", label: "删除笔记本", icon: <Trash2 size={14} />, danger: true },
-];
+// 笔记本右键菜单项 - 在组件内使用 t() 动态生成
 
 export default function Sidebar() {
   const { state } = useApp();
   const actions = useAppActions();
   const { siteConfig } = useSiteSettings();
+  const { t } = useTranslation();
   const [searchInput, setSearchInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [tagsExpanded, setTagsExpanded] = useState(true);
+
+  const notebookMenuItems: ContextMenuItem[] = [
+    { id: "new_note", label: t('sidebar.newNote'), icon: <FilePlus size={14} /> },
+    { id: "new_sub", label: t('sidebar.newSubNotebook'), icon: <FolderPlus size={14} /> },
+    { id: "sep1", label: "", separator: true },
+    { id: "rename", label: t('common.rename'), icon: <Edit2 size={14} /> },
+    { id: "sep2", label: "", separator: true },
+    { id: "delete", label: t('sidebar.deleteNotebook'), icon: <Trash2 size={14} />, danger: true },
+  ];
 
   // 右键菜单
   const { menu, menuRef, openMenu, closeMenu } = useContextMenu();
@@ -179,7 +187,7 @@ export default function Sidebar() {
   };
 
   const handleCreateNotebook = async () => {
-    const nb = await api.createNotebook({ name: "新笔记本", icon: "📒" });
+    const nb = await api.createNotebook({ name: t('common.newNotebook'), icon: "📒" });
     actions.setNotebooks([...state.notebooks, nb]);
     // 自动进入重命名
     setEditingId(nb.id);
@@ -196,14 +204,15 @@ export default function Sidebar() {
 
     switch (actionId) {
       case "new_note": {
-        const note = await api.createNote({ notebookId: targetId, title: "无标题笔记" });
+        const note = await api.createNote({ notebookId: targetId, title: t('common.untitledNote') });
         actions.setActiveNote(note);
         actions.setSelectedNotebook(targetId);
         actions.setViewMode("notebook");
+        actions.refreshNotebooks();
         break;
       }
       case "new_sub": {
-        const sub = await api.createNotebook({ name: "新笔记本", icon: "📁", parentId: targetId } as any);
+        const sub = await api.createNotebook({ name: t('common.newNotebook'), icon: "📁", parentId: targetId } as any);
         actions.setNotebooks([...state.notebooks, sub]);
         // 展开父级
         if (targetNb && targetNb.isExpanded !== 1) {
@@ -265,10 +274,10 @@ export default function Sidebar() {
   };
 
   const navItems: { icon: React.ReactNode; label: string; mode: ViewMode; active: boolean }[] = [
-    { icon: <BookOpen size={16} />, label: "所有笔记", mode: "all", active: state.viewMode === "all" },
-    { icon: <ListTodo size={16} />, label: "待办事项", mode: "tasks", active: state.viewMode === "tasks" },
-    { icon: <Star size={16} />, label: "收藏", mode: "favorites", active: state.viewMode === "favorites" },
-    { icon: <Trash2 size={16} />, label: "回收站", mode: "trash", active: state.viewMode === "trash" },
+    { icon: <BookOpen size={16} />, label: t('sidebar.allNotes'), mode: "all", active: state.viewMode === "all" },
+    { icon: <ListTodo size={16} />, label: t('sidebar.tasks'), mode: "tasks", active: state.viewMode === "tasks" },
+    { icon: <Star size={16} />, label: t('sidebar.favorites'), mode: "favorites", active: state.viewMode === "favorites" },
+    { icon: <Trash2 size={16} />, label: t('sidebar.trash'), mode: "trash", active: state.viewMode === "trash" },
   ];
 
   if (state.sidebarCollapsed) {
@@ -301,7 +310,7 @@ export default function Sidebar() {
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-tx-tertiary" size={14} />
           <Input
-            placeholder="搜索笔记..."
+            placeholder={t('sidebar.searchPlaceholder')}
             className="pl-8 h-8 text-xs bg-app-bg border-app-border"
             value={searchInput}
             onChange={(e) => {
@@ -346,7 +355,7 @@ export default function Sidebar() {
 
       {/* Notebooks */}
       <div className="px-3 flex items-center justify-between mb-1">
-        <span className="text-xs font-medium text-tx-tertiary uppercase tracking-wider">笔记本</span>
+        <span className="text-xs font-medium text-tx-tertiary uppercase tracking-wider">{t('sidebar.notebooks')}</span>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCreateNotebook}>
           <Plus size={14} />
         </Button>
@@ -379,7 +388,7 @@ export default function Sidebar() {
           onClick={() => setTagsExpanded(!tagsExpanded)}
           className="w-full flex items-center justify-between px-3 py-2 hover:bg-app-hover transition-colors"
         >
-          <span className="text-xs font-medium text-tx-tertiary uppercase tracking-wider">标签</span>
+          <span className="text-xs font-medium text-tx-tertiary uppercase tracking-wider">{t('sidebar.tags')}</span>
           <ChevronDown
             size={14}
             className={cn(
@@ -399,7 +408,7 @@ export default function Sidebar() {
             >
               <div className="px-2 pb-2 space-y-0.5">
                 {state.tags.length === 0 ? (
-                  <p className="text-[10px] text-tx-tertiary px-2 py-1">暂无标签</p>
+                  <p className="text-[10px] text-tx-tertiary px-2 py-1">{t('sidebar.noTags')}</p>
                 ) : (
                   state.tags.map((tag) => {
                     const isActive = state.viewMode === "tag" && state.selectedTagId === tag.id;
@@ -444,7 +453,7 @@ export default function Sidebar() {
           className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-tx-secondary hover:text-tx-primary hover:bg-app-hover transition-colors"
         >
           <Settings size={15} />
-          <span>设置</span>
+          <span>{t('sidebar.settings')}</span>
         </button>
         <Button
           variant="ghost"
@@ -454,7 +463,7 @@ export default function Sidebar() {
             localStorage.removeItem("nowen-token");
             window.location.reload();
           }}
-          title="退出登录"
+          title={t('sidebar.logout')}
         >
           <LogOut size={16} />
         </Button>
@@ -496,23 +505,23 @@ export default function Sidebar() {
               onClick={(e) => e.stopPropagation()}
             >
               <h4 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-2">
-                删除笔记本
+                {t('sidebar.deleteNotebookTitle')}
               </h4>
               <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-                确定要删除「{deleteTarget.icon} {deleteTarget.name}」吗？该笔记本下的所有笔记也将被删除，此操作不可撤销。
+                {t('sidebar.deleteNotebookConfirm', { name: `${deleteTarget.icon} ${deleteTarget.name}` })}
               </p>
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setDeleteTarget(null)}
                   className="px-3 py-1.5 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleDeleteConfirm}
                   className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
                 >
-                  确认删除
+                  {t('sidebar.confirmDelete')}
                 </button>
               </div>
             </motion.div>

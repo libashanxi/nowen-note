@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import i18n from "i18next";
 import { api } from "@/lib/api";
 
 export interface SiteConfig {
@@ -15,11 +16,16 @@ const DEFAULT_CONFIG: SiteConfig = {
 
 // 内置字体选项（不需要上传）
 export const BUILTIN_FONTS = [
-  { id: "", name: "Inter (默认)", family: "'Inter', system-ui, -apple-system, sans-serif" },
-  { id: "__system", name: "系统默认", family: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
-  { id: "__serif", name: "衬线体", family: "Georgia, 'Noto Serif SC', 'Source Han Serif SC', serif" },
-  { id: "__mono", name: "等宽体", family: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" },
+  { id: "", nameKey: "fonts.interDefault", family: "'Inter', system-ui, -apple-system, sans-serif" },
+  { id: "__system", nameKey: "fonts.systemDefault", family: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
+  { id: "__serif", nameKey: "fonts.serif", family: "Georgia, 'Noto Serif SC', 'Source Han Serif SC', serif" },
+  { id: "__mono", nameKey: "fonts.monospace", family: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" },
 ];
+
+// Helper to get translated font name
+export function getBuiltinFontName(font: typeof BUILTIN_FONTS[number]): string {
+  return i18n.t(font.nameKey);
+}
 
 interface SiteSettingsContextValue {
   siteConfig: SiteConfig;

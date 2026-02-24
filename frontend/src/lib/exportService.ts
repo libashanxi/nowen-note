@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import TurndownService from "turndown";
+import i18n from "i18next";
 import { api } from "./api";
 
 interface ExportNote {
@@ -15,7 +16,7 @@ interface ExportNote {
 
 // 清理文件名中的非法字符
 function sanitizeFilename(name: string): string {
-  return name.replace(/[\/\\?<>:*|"]/g, "_").replace(/\s+/g, " ").trim() || "无标题";
+  return name.replace(/[\/\\?<>:*|"]/g, "_").replace(/\s+/g, " ").trim() || i18n.t('common.untitledNote');
 }
 
 // 初始化 Turndown (HTML → Markdown)
@@ -62,11 +63,11 @@ export async function exportAllNotes(
 ): Promise<boolean> {
   try {
     // 1. 获取所有笔记
-    onProgress?.({ phase: "fetching", current: 0, total: 0, message: "正在获取笔记数据..." });
+    onProgress?.({ phase: "fetching", current: 0, total: 0, message: i18n.t('export.fetchingData') });
     const notes = await api.getExportNotes() as ExportNote[];
 
     if (!notes || notes.length === 0) {
-      onProgress?.({ phase: "error", current: 0, total: 0, message: "没有可导出的笔记" });
+      onProgress?.({ phase: "error", current: 0, total: 0, message: i18n.t('export.noNotesToExport') });
       return false;
     }
 
@@ -79,7 +80,7 @@ export async function exportAllNotes(
 
     for (let i = 0; i < notes.length; i++) {
       const note = notes[i];
-      onProgress?.({ phase: "converting", current: i + 1, total, message: `正在转换: ${note.title}` });
+      onProgress?.({ phase: "converting", current: i + 1, total, message: i18n.t('export.converting', { title: note.title }) });
 
       // 解析 content (Tiptap JSON -> HTML)
       let html = "";
@@ -114,7 +115,7 @@ export async function exportAllNotes(
       const fullContent = frontmatter + markdown;
 
       // 确定文件路径
-      const folder = note.notebookName ? sanitizeFilename(note.notebookName) : "未分类";
+      const folder = note.notebookName ? sanitizeFilename(note.notebookName) : i18n.t('export.uncategorized');
       const count = folderCounts.get(folder) || 0;
       folderCounts.set(folder, count + 1);
 
@@ -141,7 +142,7 @@ export async function exportAllNotes(
     );
 
     // 4. 生成 ZIP
-    onProgress?.({ phase: "packing", current: total, total, message: "正在生成压缩包..." });
+    onProgress?.({ phase: "packing", current: total, total, message: i18n.t('export.generatingZip') });
     const blob = await zip.generateAsync(
       {
         type: "blob",
@@ -153,7 +154,7 @@ export async function exportAllNotes(
           phase: "packing",
           current: Math.round(meta.percent),
           total: 100,
-          message: `压缩中 ${Math.round(meta.percent)}%...`,
+          message: i18n.t('export.compressing', { percent: Math.round(meta.percent) }),
         });
       }
     );
@@ -162,11 +163,11 @@ export async function exportAllNotes(
     const date = new Date().toISOString().slice(0, 10);
     saveAs(blob, `nowen-note_backup_${date}.zip`);
 
-    onProgress?.({ phase: "done", current: total, total, message: "导出成功！" });
+    onProgress?.({ phase: "done", current: total, total, message: i18n.t('export.exportComplete') });
     return true;
   } catch (error) {
     console.error("导出失败:", error);
-    onProgress?.({ phase: "error", current: 0, total: 0, message: `导出失败: ${(error as Error).message}` });
+    onProgress?.({ phase: "error", current: 0, total: 0, message: i18n.t('export.exportFailed', { error: (error as Error).message }) });
     return false;
   }
 }

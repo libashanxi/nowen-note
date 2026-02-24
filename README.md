@@ -10,7 +10,7 @@ A self-hosted private note-taking app, inspired by Synology Note Station.
 
 ### 简介
 
-nowen-note 是一款自托管的私有化笔记应用，采用现代前后端分离架构，支持 Docker 一键部署。内置 Tiptap 富文本编辑器，支持 JWT 认证、无限层级笔记本、全文搜索、待办事项、标签管理、数据导入导出等功能。
+nowen-note 是一款自托管的私有化笔记应用，采用现代前后端分离架构，支持 Docker 一键部署。内置 Tiptap 富文本编辑器，支持 JWT 认证、无限层级笔记本、全文搜索、待办事项、标签管理、数据导入导出、自定义字体、笔记大纲、字数统计等功能。
 
 ### 技术栈
 
@@ -43,7 +43,8 @@ nowen-note/
 │   │   │   ├── SecuritySettings.tsx # 账号安全设置
 │   │   │   └── DataManager.tsx      # 数据管理（导入导出 + 恢复出厂）
 │   │   ├── hooks/         # 自定义 Hooks
-│   │   │   └── useContextMenu.ts    # 右键菜单状态管理 + 边缘碰撞检测
+│   │   │   ├── useContextMenu.ts    # 右键菜单状态管理 + 边缘碰撞检测
+│   │   │   └── useSiteSettings.tsx  # 站点设置 Context（标题/图标/字体）
 │   │   ├── store/         # 状态管理（useReducer + Context）
 │   │   ├── lib/           # 工具函数 & API 封装
 │   │   └── types/         # 类型定义
@@ -58,7 +59,9 @@ nowen-note/
 │       │   ├── tags.ts        # 标签管理
 │       │   ├── tasks.ts       # 待办事项
 │       │   ├── search.ts      # 全文搜索
-│       │   └── export.ts      # 数据导入导出
+│       │   ├── export.ts      # 数据导入导出
+│       │   ├── settings.ts    # 站点设置（标题/图标/字体）
+│       │   └── fonts.ts       # 自定义字体管理（上传/下载/删除）
 │       └── index.ts       # 入口文件（JWT 中间件 + 路由注册）
 ├── Dockerfile             # 多阶段构建
 ├── docker-compose.yml     # 容器编排
@@ -284,6 +287,9 @@ docker run -d \
 - **三栏布局**：侧边栏 + 笔记列表 + 编辑器（自适应宽度）
 - **Tiptap 富文本编辑器**：Markdown 快捷键、代码高亮、图片插入、任务列表
 - **笔记操作**：置顶、收藏、软删除（回收站）、恢复、永久删除
+- **笔记移动**：右键菜单"移动到..."弹窗（树形笔记本选择器）、编辑器顶栏快速切换笔记本
+- **字数统计**：实时显示词数和字符数（中文按字计数，英文按空格分词）
+- **笔记大纲**：自动提取 H1-H3 标题生成大纲面板，点击标题跳转定位
 - **乐观锁**：version 字段防止编辑冲突
 
 #### 笔记本
@@ -317,7 +323,8 @@ docker run -d \
 - **恢复出厂设置**：清空所有数据并重置管理员账户，二次确认防误触（需输入 `RESET`）
 
 #### 设置中心
-- **外观设置**：主题切换（浅色 / 深色 / 跟随系统）
+- **外观设置**：主题切换（浅色 / 深色 / 跟随系统）、站点名称与图标自定义
+- **字体管理**：内置 4 种字体方案（默认 / 系统 / 衬线 / 等宽）+ 自定义字体上传（支持 otf/ttf/woff/woff2），实时预览
 - **账号安全**：修改用户名和密码
 - **数据管理**：导入导出与恢复出厂
 
@@ -332,7 +339,7 @@ docker run -d \
 
 ### Introduction
 
-nowen-note is a self-hosted private note-taking application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring JWT authentication, a Tiptap rich-text editor, unlimited nested notebooks, full-text search, task management, tag system, data import/export, and more.
+nowen-note is a self-hosted private note-taking application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring JWT authentication, a Tiptap rich-text editor, unlimited nested notebooks, full-text search, task management, tag system, data import/export, custom fonts, note outline, word count, and more.
 
 ### Tech Stack
 
@@ -365,7 +372,8 @@ nowen-note/
 │   │   │   ├── SecuritySettings.tsx # Account security settings
 │   │   │   └── DataManager.tsx      # Data management (import/export + factory reset)
 │   │   ├── hooks/         # Custom Hooks
-│   │   │   └── useContextMenu.ts    # Context menu state + edge collision detection
+│   │   │   ├── useContextMenu.ts    # Context menu state + edge collision detection
+│   │   │   └── useSiteSettings.tsx  # Site settings Context (title/favicon/font)
 │   │   ├── store/         # State management (useReducer + Context)
 │   │   ├── lib/           # Utilities & API client
 │   │   └── types/         # Type definitions
@@ -380,7 +388,9 @@ nowen-note/
 │       │   ├── tags.ts        # Tag management
 │       │   ├── tasks.ts       # Task/Todo management
 │       │   ├── search.ts      # Full-text search
-│       │   └── export.ts      # Data import/export
+│       │   ├── export.ts      # Data import/export
+│       │   ├── settings.ts    # Site settings (title/favicon/font)
+│       │   └── fonts.ts       # Custom font management (upload/download/delete)
 │       └── index.ts       # Entry point (JWT middleware + route registration)
 ├── Dockerfile             # Multi-stage build
 ├── docker-compose.yml     # Container orchestration
@@ -481,6 +491,9 @@ All NAS platforms with Docker support follow the same general steps:
 - **Three-column layout**: Sidebar + Note List + Editor (flexible width)
 - **Tiptap rich-text editor**: Markdown shortcuts, code highlighting, image upload, task lists
 - **Note operations**: Pin, favorite, soft delete (trash), restore, permanent delete
+- **Move notes**: Right-click "Move to..." modal (tree notebook selector) + quick notebook switch in editor header
+- **Word count**: Real-time word and character count (CJK characters counted individually, English by whitespace)
+- **Note outline**: Auto-extract H1-H3 headings into outline panel with click-to-scroll navigation
 - **Optimistic locking**: Version field to prevent edit conflicts
 
 #### Notebooks
@@ -514,7 +527,8 @@ All NAS platforms with Docker support follow the same general steps:
 - **Factory reset**: Wipe all data and reset admin account, requires typing `RESET` to confirm
 
 #### Settings Center
-- **Appearance**: Theme switch (light / dark / system)
+- **Appearance**: Theme switch (light / dark / system), custom site name and favicon
+- **Font management**: 4 built-in font schemes (default / system / serif / monospace) + custom font upload (otf/ttf/woff/woff2), live preview
 - **Account Security**: Change username and password
 - **Data Management**: Import/export and factory reset
 

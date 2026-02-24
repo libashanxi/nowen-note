@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback } from "react";
 import { Notebook, NoteListItem, Note, Tag, ViewMode } from "@/types";
+import { api } from "@/lib/api";
 
 export type SyncStatus = "idle" | "saving" | "saved" | "error";
 export type MobileView = "list" | "editor";
@@ -136,5 +137,8 @@ export function useAppActions() {
     setLastSynced: useCallback((v: string) => dispatch({ type: "SET_LAST_SYNCED", payload: v }), [dispatch]),
     setMobileView: useCallback((v: MobileView) => dispatch({ type: "SET_MOBILE_VIEW", payload: v }), [dispatch]),
     setMobileSidebar: useCallback((v: boolean) => dispatch({ type: "SET_MOBILE_SIDEBAR", payload: v }), [dispatch]),
+    refreshNotebooks: useCallback(() => {
+      api.getNotebooks().then((v) => dispatch({ type: "SET_NOTEBOOKS", payload: v })).catch(console.error);
+    }, [dispatch]),
   };
 }

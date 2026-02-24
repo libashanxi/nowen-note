@@ -18,6 +18,7 @@ export interface Notebook {
   isExpanded: number;
   createdAt: string;
   updatedAt: string;
+  noteCount?: number;
   children?: Notebook[];
 }
 
