@@ -102,3 +102,12 @@ export interface TaskStats {
   today: number;
   overdue: number;
 }
+
+export interface CustomFont {
+  id: string;
+  name: string;
+  fileName: string;
+  format: string;
+  fileSize?: number;
+  createdAt: string;
+}

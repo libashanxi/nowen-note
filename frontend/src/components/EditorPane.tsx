@@ -1,18 +1,24 @@
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft } from "lucide-react";
+import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, Folder, X, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import TiptapEditor from "@/components/TiptapEditor";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import TiptapEditor, { HeadingItem } from "@/components/TiptapEditor";
 import { useApp, useAppActions, SyncStatus } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Tag } from "@/types";
+import { Tag, Notebook } from "@/types";
 
 export default function EditorPane() {
   const { state } = useApp();
   const actions = useAppActions();
   const { activeNote, syncStatus, lastSyncedAt } = state;
   const savedTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [showMoveDropdown, setShowMoveDropdown] = useState(false);
+  const moveDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [showOutline, setShowOutline] = useState(false);
+  const [headings, setHeadings] = useState<HeadingItem[]>([]);
+  const scrollToRef = useRef<((pos: number) => void) | null>(null);
 
   const handleUpdate = useCallback(async (data: { content: string; contentText: string; title: string }) => {
     if (!activeNote) return;
@@ -81,8 +87,15 @@ export default function EditorPane() {
   const handleTagsChange = useCallback((tags: Tag[]) => {
     if (!activeNote) return;
     actions.setActiveNote({ ...activeNote, tags });
-    // 刷新全局标签列表以更新计数
     api.getTags().then(actions.setTags).catch(console.error);
+  }, [activeNote, actions]);
+
+  const handleMoveToNotebook = useCallback(async (notebookId: string) => {
+    if (!activeNote || notebookId === activeNote.notebookId) return;
+    const updated = await api.updateNote(activeNote.id, { notebookId } as any);
+    actions.setActiveNote(updated);
+    actions.updateNoteInList({ id: updated.id, notebookId: updated.notebookId });
+    setShowMoveDropdown(false);
   }, [activeNote, actions]);
 
   if (!activeNote) {
@@ -127,11 +140,51 @@ export default function EditorPane() {
 
       {/* Desktop Editor Header */}
       <div className="hidden md:flex items-center justify-between px-4 py-2 border-b border-app-border bg-app-surface/30 transition-colors">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-tx-tertiary">
-            {state.notebooks.find((n) => n.id === activeNote.notebookId)?.icon}{" "}
-            {state.notebooks.find((n) => n.id === activeNote.notebookId)?.name}
-          </span>
+        <div className="relative">
+          <button
+            onClick={() => setShowMoveDropdown(!showMoveDropdown)}
+            className="flex items-center gap-1.5 text-xs text-tx-tertiary hover:text-tx-secondary transition-colors rounded-md px-1.5 py-1 hover:bg-app-hover"
+            title="移动到其他笔记本"
+          >
+            <span>
+              {state.notebooks.find((n) => n.id === activeNote.notebookId)?.icon}{" "}
+              {state.notebooks.find((n) => n.id === activeNote.notebookId)?.name}
+            </span>
+            <ChevronDown size={12} />
+          </button>
+          {showMoveDropdown && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowMoveDropdown(false)} />
+              <div
+                ref={moveDropdownRef}
+                className="absolute top-full left-0 mt-1 w-56 bg-app-elevated border border-app-border rounded-lg shadow-xl z-50 py-1 max-h-64 overflow-auto"
+                style={{ animation: "contextMenuIn 0.12s ease-out" }}
+              >
+                <div className="px-3 py-1.5 text-[10px] font-medium text-tx-tertiary border-b border-app-border mb-1">
+                  移动到...
+                </div>
+                {state.notebooks.map((nb) => (
+                  <button
+                    key={nb.id}
+                    disabled={nb.id === activeNote.notebookId}
+                    onClick={() => handleMoveToNotebook(nb.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors",
+                      nb.id === activeNote.notebookId
+                        ? "opacity-40 cursor-not-allowed text-tx-tertiary"
+                        : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+                    )}
+                  >
+                    <span>{nb.icon || "📁"}</span>
+                    <span className="truncate">{nb.name}</span>
+                    {nb.id === activeNote.notebookId && (
+                      <span className="ml-auto text-[10px] text-tx-tertiary">当前</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Sync Indicator + Actions */}
@@ -162,14 +215,98 @@ export default function EditorPane() {
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={moveToTrash} title="移到回收站">
             <Trash2 size={14} />
           </Button>
+          <div className="w-px h-4 bg-app-border mx-1" />
+          <Button
+            variant="ghost" size="icon" className="h-7 w-7"
+            onClick={() => setShowOutline(!showOutline)}
+            title={showOutline ? "隐藏大纲" : "显示大纲"}
+          >
+            <ListTree size={14} className={cn(showOutline && "text-accent-primary")} />
+          </Button>
         </div>
       </div>
 
-      {/* Tiptap Editor */}
-      <div className="flex-1 overflow-hidden">
-        <TiptapEditor note={activeNote} onUpdate={handleUpdate} onTagsChange={handleTagsChange} />
+      {/* Tiptap Editor + Outline */}
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-hidden">
+          <TiptapEditor
+            note={activeNote}
+            onUpdate={handleUpdate}
+            onTagsChange={handleTagsChange}
+            onHeadingsChange={setHeadings}
+            onEditorReady={(fn) => { scrollToRef.current = fn; }}
+          />
+        </div>
+        {showOutline && (
+          <OutlinePanel
+            headings={headings}
+            onSelect={(pos) => scrollToRef.current?.(pos)}
+            onClose={() => setShowOutline(false)}
+          />
+        )}
       </div>
     </motion.div>
+  );
+}
+
+/* ===== 大纲面板 ===== */
+function OutlinePanel({
+  headings,
+  onSelect,
+  onClose,
+}: {
+  headings: HeadingItem[];
+  onSelect: (pos: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="hidden md:flex flex-col w-56 min-w-[200px] border-l border-app-border bg-app-surface/50 transition-colors">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-app-border">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-tx-secondary">
+          <ListTree size={13} className="text-accent-primary" />
+          <span>大纲</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-0.5 rounded hover:bg-app-hover text-tx-tertiary hover:text-tx-secondary transition-colors"
+        >
+          <X size={13} />
+        </button>
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="py-1">
+          {headings.length === 0 ? (
+            <div className="px-3 py-6 text-center">
+              <p className="text-[11px] text-tx-tertiary">暂无标题</p>
+              <p className="text-[10px] text-tx-tertiary mt-1">使用 H1-H3 标题来生成大纲</p>
+            </div>
+          ) : (
+            headings.map((h) => (
+              <button
+                key={h.id}
+                onClick={() => onSelect(h.pos)}
+                className={cn(
+                  "w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-app-hover truncate",
+                  h.level === 1 && "font-medium text-tx-primary",
+                  h.level === 2 && "text-tx-secondary",
+                  h.level === 3 && "text-tx-tertiary",
+                )}
+                style={{ paddingLeft: `${(h.level - 1) * 12 + 12}px` }}
+                title={h.text}
+              >
+                <span className={cn(
+                  "inline-block w-1.5 h-1.5 rounded-full mr-2 shrink-0 align-middle",
+                  h.level === 1 && "bg-accent-primary",
+                  h.level === 2 && "bg-accent-primary/50",
+                  h.level === 3 && "bg-tx-tertiary/50",
+                )} />
+                {h.text || "无标题"}
+              </button>
+            ))
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 

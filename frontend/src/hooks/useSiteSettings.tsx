@@ -4,22 +4,34 @@ import { api } from "@/lib/api";
 export interface SiteConfig {
   title: string;
   favicon: string;
+  editorFontFamily: string; // 空串=默认(Inter), 自定义字体 id, 或内置字体名
 }
 
 const DEFAULT_CONFIG: SiteConfig = {
   title: "nowen-note",
   favicon: "",
+  editorFontFamily: "",
 };
+
+// 内置字体选项（不需要上传）
+export const BUILTIN_FONTS = [
+  { id: "", name: "Inter (默认)", family: "'Inter', system-ui, -apple-system, sans-serif" },
+  { id: "__system", name: "系统默认", family: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
+  { id: "__serif", name: "衬线体", family: "Georgia, 'Noto Serif SC', 'Source Han Serif SC', serif" },
+  { id: "__mono", name: "等宽体", family: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace" },
+];
 
 interface SiteSettingsContextValue {
   siteConfig: SiteConfig;
   updateSiteConfig: (title: string, favicon: string) => Promise<void>;
+  updateEditorFont: (fontId: string) => Promise<void>;
   isLoaded: boolean;
 }
 
 const SiteSettingsContext = createContext<SiteSettingsContextValue>({
   siteConfig: DEFAULT_CONFIG,
   updateSiteConfig: async () => {},
+  updateEditorFont: async () => {},
   isLoaded: false,
 });
 
@@ -45,21 +57,70 @@ function applyToDOM(title: string, faviconUrl: string) {
   }
 }
 
+function applyEditorFont(fontId: string, customFontName?: string) {
+  const builtin = BUILTIN_FONTS.find(f => f.id === fontId);
+  if (builtin) {
+    document.documentElement.style.setProperty("--editor-font-family", builtin.family);
+    return;
+  }
+
+  // 自定义字体：注入 @font-face 并设置 CSS 变量
+  if (fontId && customFontName) {
+    const fontFaceName = `CustomFont-${fontId.slice(0, 8)}`;
+    const styleId = `font-face-${fontId}`;
+
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `@font-face { font-family: '${fontFaceName}'; src: url('${api.getFontFileUrl(fontId)}'); font-display: swap; }`;
+      document.head.appendChild(style);
+    }
+
+    document.documentElement.style.setProperty(
+      "--editor-font-family",
+      `'${fontFaceName}', system-ui, sans-serif`
+    );
+    return;
+  }
+
+  // 回退默认
+  document.documentElement.style.setProperty(
+    "--editor-font-family",
+    "'Inter', system-ui, -apple-system, sans-serif"
+  );
+}
+
 export function SiteSettingsProvider({ children }: { children: React.ReactNode }) {
   const [siteConfig, setSiteConfig] = useState<SiteConfig>(DEFAULT_CONFIG);
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    api.getSiteSettingsPublic().then((data) => {
+    api.getSiteSettingsPublic().then(async (data) => {
       const config: SiteConfig = {
         title: data.site_title || "nowen-note",
         favicon: data.site_favicon || "",
+        editorFontFamily: data.editor_font_family || "",
       };
       setSiteConfig(config);
       applyToDOM(config.title, config.favicon);
+
+      // 加载自定义字体名
+      if (config.editorFontFamily && !BUILTIN_FONTS.find(f => f.id === config.editorFontFamily)) {
+        try {
+          const fonts = await api.getFontsPublic();
+          const font = fonts.find(f => f.id === config.editorFontFamily);
+          applyEditorFont(config.editorFontFamily, font?.name);
+        } catch {
+          applyEditorFont(config.editorFontFamily);
+        }
+      } else {
+        applyEditorFont(config.editorFontFamily);
+      }
+
       setIsLoaded(true);
     }).catch(() => {
       applyToDOM(DEFAULT_CONFIG.title, DEFAULT_CONFIG.favicon);
+      applyEditorFont("");
       setIsLoaded(true);
     });
   }, []);
@@ -72,13 +133,36 @@ export function SiteSettingsProvider({ children }: { children: React.ReactNode }
     const config: SiteConfig = {
       title: data.site_title || "nowen-note",
       favicon: data.site_favicon || "",
+      editorFontFamily: data.editor_font_family || siteConfig.editorFontFamily,
     };
     setSiteConfig(config);
     applyToDOM(config.title, config.favicon);
-  }, []);
+  }, [siteConfig.editorFontFamily]);
+
+  const updateEditorFont = useCallback(async (fontId: string) => {
+    const data = await api.updateSiteSettings({ editor_font_family: fontId });
+    const config: SiteConfig = {
+      ...siteConfig,
+      editorFontFamily: data.editor_font_family || "",
+    };
+    setSiteConfig(config);
+
+    // 获取自定义字体名用于 @font-face
+    if (fontId && !BUILTIN_FONTS.find(f => f.id === fontId)) {
+      try {
+        const fonts = await api.getFonts();
+        const font = fonts.find(f => f.id === fontId);
+        applyEditorFont(fontId, font?.name);
+      } catch {
+        applyEditorFont(fontId);
+      }
+    } else {
+      applyEditorFont(fontId);
+    }
+  }, [siteConfig]);
 
   return (
-    <SiteSettingsContext.Provider value={{ siteConfig, updateSiteConfig, isLoaded }}>
+    <SiteSettingsContext.Provider value={{ siteConfig, updateSiteConfig, updateEditorFont, isLoaded }}>
       {children}
     </SiteSettingsContext.Provider>
   );

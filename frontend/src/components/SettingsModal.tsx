@@ -1,10 +1,13 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Palette, Shield, Database, X, Settings, Camera, Save, Loader2, Trash2 } from "lucide-react";
+import { Palette, Shield, Database, X, Settings, Camera, Save, Loader2, Trash2, Upload, Type, Check, ChevronDown } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import SecuritySettings from "@/components/SecuritySettings";
 import DataManager from "@/components/DataManager";
-import { useSiteSettings } from "@/hooks/useSiteSettings";
+import { useSiteSettings, BUILTIN_FONTS } from "@/hooks/useSiteSettings";
+import { api } from "@/lib/api";
+import { CustomFont } from "@/types";
+import { cn } from "@/lib/utils";
 
 const SETTING_TABS = [
   { id: "appearance", label: "外观设置", icon: Palette },
@@ -20,12 +23,42 @@ interface SettingsModalProps {
 }
 
 function AppearancePanel() {
-  const { siteConfig, updateSiteConfig } = useSiteSettings();
+  const { siteConfig, updateSiteConfig, updateEditorFont } = useSiteSettings();
   const [title, setTitle] = useState(siteConfig.title);
   const [previewIcon, setPreviewIcon] = useState(siteConfig.favicon);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 字体状态
+  const [customFonts, setCustomFonts] = useState<CustomFont[]>([]);
+  const [fontDropdownOpen, setFontDropdownOpen] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [isSwitchingFont, setIsSwitchingFont] = useState(false);
+  const fontFileRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 加载自定义字体列表
+  const loadFonts = useCallback(async () => {
+    try {
+      const fonts = await api.getFonts();
+      setCustomFonts(fonts);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadFonts(); }, [loadFonts]);
+
+  // 点击外部关闭下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setFontDropdownOpen(false);
+      }
+    };
+    if (fontDropdownOpen) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [fontDropdownOpen]);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -63,6 +96,55 @@ function AppearancePanel() {
   };
 
   const hasChanges = title !== siteConfig.title || previewIcon !== siteConfig.favicon;
+
+  // 当前字体的显示名
+  const currentFontName = (() => {
+    const builtin = BUILTIN_FONTS.find(f => f.id === siteConfig.editorFontFamily);
+    if (builtin) return builtin.name;
+    const custom = customFonts.find(f => f.id === siteConfig.editorFontFamily);
+    return custom ? custom.name : "Inter (默认)";
+  })();
+
+  const handleSelectFont = async (fontId: string) => {
+    setIsSwitchingFont(true);
+    setFontDropdownOpen(false);
+    try {
+      await updateEditorFont(fontId);
+    } catch { /* ignore */ }
+    setIsSwitchingFont(false);
+  };
+
+  const handleUploadFonts = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    setUploadMessage("");
+    try {
+      const result = await api.uploadFonts(files);
+      const msgs: string[] = [];
+      if (result.uploaded.length > 0) msgs.push(`成功导入 ${result.uploaded.length} 个字体`);
+      if (result.errors.length > 0) msgs.push(result.errors.join("; "));
+      setUploadMessage(msgs.join(" · "));
+      await loadFonts();
+      setTimeout(() => setUploadMessage(""), 4000);
+    } catch (err: any) {
+      setUploadMessage(err.message || "上传失败");
+    } finally {
+      setIsUploading(false);
+      if (fontFileRef.current) fontFileRef.current.value = "";
+    }
+  };
+
+  const handleDeleteFont = async (fontId: string) => {
+    try {
+      await api.deleteFont(fontId);
+      // 如果删的是当前字体，回退默认
+      if (siteConfig.editorFontFamily === fontId) {
+        await updateEditorFont("");
+      }
+      await loadFonts();
+    } catch { /* ignore */ }
+  };
 
   return (
     <div className="space-y-6">
@@ -163,12 +245,128 @@ function AppearancePanel() {
           <ThemeToggle />
         </div>
 
-        <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
-          <div>
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">编辑器字体</span>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Inter · 系统默认</p>
+        {/* 编辑器字体 - 可交互 */}
+        <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">编辑器字体</span>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">选择内置字体或导入自定义字体包</p>
+            </div>
+            {isSwitchingFont && <Loader2 size={14} className="animate-spin text-accent-primary" />}
           </div>
-          <span className="text-xs text-zinc-400 dark:text-zinc-600 px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800">默认</span>
+
+          {/* 字体选择器下拉 */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setFontDropdownOpen(!fontDropdownOpen)}
+              className="w-full flex items-center justify-between px-3 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-zinc-100 hover:border-accent-primary/50 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Type size={14} className="text-zinc-400" />
+                {currentFontName}
+              </span>
+              <ChevronDown size={14} className={cn("text-zinc-400 transition-transform", fontDropdownOpen && "rotate-180")} />
+            </button>
+
+            <AnimatePresence>
+              {fontDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute z-50 top-full left-0 mt-1 w-full max-h-64 overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-xl"
+                >
+                  {/* 内置字体 */}
+                  <div className="px-2 pt-2 pb-1">
+                    <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2">内置字体</span>
+                  </div>
+                  {BUILTIN_FONTS.map(font => (
+                    <button
+                      key={font.id}
+                      onClick={() => handleSelectFont(font.id)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
+                    >
+                      <span style={{ fontFamily: font.family }}>{font.name}</span>
+                      {siteConfig.editorFontFamily === font.id && <Check size={14} className="text-accent-primary" />}
+                    </button>
+                  ))}
+
+                  {/* 自定义字体 */}
+                  {customFonts.length > 0 && (
+                    <>
+                      <div className="h-px bg-zinc-100 dark:bg-zinc-800 mx-2 my-1" />
+                      <div className="px-2 pt-1 pb-1">
+                        <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider px-2">已导入字体</span>
+                      </div>
+                      {customFonts.map(font => (
+                        <div
+                          key={font.id}
+                          className="flex items-center justify-between px-3 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors group"
+                        >
+                          <button
+                            onClick={() => handleSelectFont(font.id)}
+                            className="flex-1 text-left text-sm text-zinc-700 dark:text-zinc-300"
+                          >
+                            {font.name}
+                            <span className="ml-2 text-[10px] text-zinc-400">.{font.format}</span>
+                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {siteConfig.editorFontFamily === font.id && <Check size={14} className="text-accent-primary" />}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeleteFont(font.id); }}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 text-zinc-400 hover:text-red-500 transition-all"
+                              title="删除字体"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* 字体导入 */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => fontFileRef.current?.click()}
+              disabled={isUploading}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-xs text-zinc-600 dark:text-zinc-400 hover:border-accent-primary/50 hover:text-accent-primary transition-colors disabled:opacity-50"
+            >
+              {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+              导入字体包
+            </button>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">支持 OTF / OTC / TTC / TTF / WOFF2 · 可批量选择</span>
+            <input
+              type="file"
+              ref={fontFileRef}
+              onChange={handleUploadFonts}
+              accept=".otf,.otc,.ttc,.ttf,.woff,.woff2"
+              multiple
+              className="hidden"
+            />
+          </div>
+
+          {uploadMessage && (
+            <p className={cn("text-xs", uploadMessage.includes("成功") ? "text-emerald-500" : "text-amber-500")}>{uploadMessage}</p>
+          )}
+
+          {/* 字体预览 */}
+          <div
+            className="px-3 py-3 rounded-lg border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-950"
+            style={{ fontFamily: "var(--editor-font-family)" }}
+          >
+            <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+              The quick brown fox jumps over the lazy dog.
+            </p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed mt-1">
+              我能吞下玻璃而不伤身体。0123456789
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">

@@ -1,4 +1,4 @@
-import { Notebook, Note, NoteListItem, Tag, SearchResult, User, Task, TaskStats, TaskFilter } from "@/types";
+import { Notebook, Note, NoteListItem, Tag, SearchResult, User, Task, TaskStats, TaskFilter, CustomFont } from "@/types";
 
 const BASE_URL = "/api";
 
@@ -31,9 +31,9 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   // Public (no auth required)
-  getSiteSettingsPublic: async (): Promise<{ site_title: string; site_favicon: string }> => {
+  getSiteSettingsPublic: async (): Promise<{ site_title: string; site_favicon: string; editor_font_family: string }> => {
     const res = await fetch(`${BASE_URL}/settings`);
-    if (!res.ok) return { site_title: "nowen-note", site_favicon: "" };
+    if (!res.ok) return { site_title: "nowen-note", site_favicon: "", editor_font_family: "" };
     return res.json();
   },
 
@@ -97,10 +97,37 @@ export const api = {
     }),
 
   // Site Settings
-  getSiteSettings: () => request<{ site_title: string; site_favicon: string }>("/settings"),
-  updateSiteSettings: (data: { site_title?: string; site_favicon?: string }) =>
-    request<{ site_title: string; site_favicon: string }>("/settings", {
+  getSiteSettings: () => request<{ site_title: string; site_favicon: string; editor_font_family: string }>("/settings"),
+  updateSiteSettings: (data: { site_title?: string; site_favicon?: string; editor_font_family?: string }) =>
+    request<{ site_title: string; site_favicon: string; editor_font_family: string }>("/settings", {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  // Fonts
+  getFonts: () => request<CustomFont[]>("/fonts"),
+  getFontsPublic: async (): Promise<CustomFont[]> => {
+    const res = await fetch(`${BASE_URL}/fonts`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+  uploadFonts: async (files: FileList | File[]): Promise<{ uploaded: CustomFont[]; errors: string[] }> => {
+    const token = getToken();
+    const form = new FormData();
+    for (const file of Array.from(files)) {
+      form.append("files", file);
+    }
+    const res = await fetch(`${BASE_URL}/fonts/upload`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "上传失败");
+    }
+    return res.json();
+  },
+  deleteFont: (id: string) => request(`/fonts/${id}`, { method: "DELETE" }),
+  getFontFileUrl: (id: string) => `${BASE_URL}/fonts/file/${id}`,
 };

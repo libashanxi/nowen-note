@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
@@ -21,6 +21,13 @@ import { Note, Tag } from "@/types";
 import TagInput from "@/components/TagInput";
 
 const lowlight = createLowlight(common);
+
+export interface HeadingItem {
+  id: string;
+  level: number;
+  text: string;
+  pos: number;
+}
 
 interface ToolbarButtonProps {
   onClick: () => void;
@@ -58,11 +65,43 @@ interface TiptapEditorProps {
   note: Note;
   onUpdate: (data: { content: string; contentText: string; title: string }) => void;
   onTagsChange?: (tags: Tag[]) => void;
+  onHeadingsChange?: (headings: HeadingItem[]) => void;
+  onEditorReady?: (scrollTo: (pos: number) => void) => void;
 }
 
-export default function TiptapEditor({ note, onUpdate, onTagsChange }: TiptapEditorProps) {
+function extractHeadings(editor: any): HeadingItem[] {
+  const headings: HeadingItem[] = [];
+  const doc = editor.state.doc;
+  let idx = 0;
+  doc.descendants((node: any, pos: number) => {
+    if (node.type.name === "heading") {
+      headings.push({
+        id: `h-${idx++}`,
+        level: node.attrs.level,
+        text: node.textContent || "",
+        pos,
+      });
+    }
+  });
+  return headings;
+}
+
+export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady }: TiptapEditorProps) {
   const titleRef = useRef<HTMLInputElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const [wordStats, setWordStats] = useState({ chars: 0, charsNoSpace: 0, words: 0 });
+
+  const editorScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const computeStats = useCallback((text: string) => {
+    const chars = text.length;
+    const charsNoSpace = text.replace(/\s/g, "").length;
+    // 中文按字计数 + 英文按空格分词
+    const cjk = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g) || []).length;
+    const nonCjk = text.replace(/[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/g, " ").trim();
+    const enWords = nonCjk ? nonCjk.split(/\s+/).filter(Boolean).length : 0;
+    return { chars, charsNoSpace, words: cjk + enWords };
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -104,10 +143,12 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange }: TiptapEdi
       },
     },
     onUpdate: ({ editor }) => {
+      const text = editor.getText();
+      setWordStats(computeStats(text));
+      onHeadingsChange?.(extractHeadings(editor));
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(() => {
         const json = JSON.stringify(editor.getJSON());
-        const text = editor.getText();
         const title = titleRef.current?.value || note.title;
         onUpdate({ content: json, contentText: text, title });
       }, 500);
@@ -122,11 +163,29 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange }: TiptapEdi
       if (currentJson !== newJson) {
         editor.commands.setContent(parsed);
       }
+      setWordStats(computeStats(editor.getText()));
+      onHeadingsChange?.(extractHeadings(editor));
     }
     if (titleRef.current) {
       titleRef.current.value = note.title;
     }
   }, [note.id]);
+
+  // Provide scrollTo callback to parent
+  useEffect(() => {
+    if (!editor) return;
+    const scrollTo = (pos: number) => {
+      editor.commands.focus();
+      editor.commands.setTextSelection(pos);
+      // Scroll the heading node into view
+      const dom = editor.view.domAtPos(pos + 1);
+      if (dom?.node) {
+        const el = dom.node instanceof HTMLElement ? dom.node : dom.node.parentElement;
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    };
+    onEditorReady?.(scrollTo);
+  }, [editor, onEditorReady]);
 
   const handleTitleChange = useCallback(() => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -304,6 +363,10 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange }: TiptapEdi
           <span>版本 {note.version}</span>
           <span>·</span>
           <span>更新于 {new Date(note.updatedAt + "Z").toLocaleString("zh-CN")}</span>
+          <span>·</span>
+          <span>{wordStats.words} 词</span>
+          <span>·</span>
+          <span>{wordStats.charsNoSpace} 字符</span>
         </div>
       </div>
 

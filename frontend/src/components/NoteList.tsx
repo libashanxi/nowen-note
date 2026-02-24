@@ -1,13 +1,13 @@
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu } from "lucide-react";
+import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, Folder, X, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
 import { useContextMenu } from "@/hooks/useContextMenu";
 import { useApp, useAppActions } from "@/store/AppContext";
 import { api } from "@/lib/api";
-import { NoteListItem } from "@/types";
+import { NoteListItem, Notebook } from "@/types";
 import { cn } from "@/lib/utils";
 
 function formatTime(dateStr: string) {
@@ -22,6 +22,154 @@ function formatTime(dateStr: string) {
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 7) return `${diffDay} 天前`;
   return d.toLocaleDateString("zh-CN");
+}
+
+/* ===== 笔记本树形选择 ===== */
+function buildNotebookTree(notebooks: Notebook[]): Notebook[] {
+  const map = new Map<string, Notebook>();
+  const roots: Notebook[] = [];
+  for (const nb of notebooks) {
+    map.set(nb.id, { ...nb, children: [] });
+  }
+  for (const nb of notebooks) {
+    const node = map.get(nb.id)!;
+    if (nb.parentId && map.has(nb.parentId)) {
+      map.get(nb.parentId)!.children!.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  return roots;
+}
+
+function NotebookTreeItem({
+  notebook, depth, selectedId, currentNotebookId, onSelect,
+}: {
+  notebook: Notebook; depth: number; selectedId: string | null;
+  currentNotebookId: string; onSelect: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = notebook.children && notebook.children.length > 0;
+  const isCurrent = notebook.id === currentNotebookId;
+  const isSelected = notebook.id === selectedId;
+
+  return (
+    <div>
+      <button
+        onClick={() => !isCurrent && onSelect(notebook.id)}
+        disabled={isCurrent}
+        className={cn(
+          "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors",
+          isCurrent
+            ? "opacity-40 cursor-not-allowed"
+            : isSelected
+            ? "bg-accent-primary/10 text-accent-primary"
+            : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+        )}
+        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+      >
+        {hasChildren ? (
+          <span
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="w-4 h-4 flex items-center justify-center shrink-0 cursor-pointer"
+          >
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+        ) : (
+          <span className="w-4 h-4 shrink-0" />
+        )}
+        <Folder size={14} className="shrink-0" />
+        <span className="truncate flex-1 text-left">{notebook.name}</span>
+        {isCurrent && <span className="text-[10px] text-tx-tertiary shrink-0">当前</span>}
+        {isSelected && <Check size={14} className="text-accent-primary shrink-0" />}
+      </button>
+      {hasChildren && expanded && notebook.children!.map((child) => (
+        <NotebookTreeItem
+          key={child.id}
+          notebook={child}
+          depth={depth + 1}
+          selectedId={selectedId}
+          currentNotebookId={currentNotebookId}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MoveNoteModal({
+  isOpen, noteTitle, currentNotebookId, notebooks, onMove, onClose,
+}: {
+  isOpen: boolean; noteTitle: string; currentNotebookId: string;
+  notebooks: Notebook[]; onMove: (notebookId: string) => void; onClose: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const tree = buildNotebookTree(notebooks);
+
+  useEffect(() => {
+    if (isOpen) setSelectedId(null);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-[360px] max-h-[480px] bg-app-elevated border border-app-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ animation: "contextMenuIn 0.15s ease-out" }}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-app-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <FolderInput size={16} className="text-accent-primary shrink-0" />
+            <span className="text-sm font-medium text-tx-primary truncate">移动笔记</span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-app-hover text-tx-tertiary">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 py-2 text-xs text-tx-tertiary truncate border-b border-app-border">
+          {noteTitle || "无标题笔记"}
+        </div>
+        <ScrollArea className="flex-1 max-h-[300px]">
+          <div className="p-2">
+            {tree.map((nb) => (
+              <NotebookTreeItem
+                key={nb.id}
+                notebook={nb}
+                depth={0}
+                selectedId={selectedId}
+                currentNotebookId={currentNotebookId}
+                onSelect={setSelectedId}
+              />
+            ))}
+            {tree.length === 0 && (
+              <p className="text-xs text-tx-tertiary text-center py-4">暂无笔记本</p>
+            )}
+          </div>
+        </ScrollArea>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-app-border">
+          <Button variant="ghost" size="sm" onClick={onClose}>取消</Button>
+          <Button
+            size="sm"
+            disabled={!selectedId || selectedId === currentNotebookId}
+            onClick={() => selectedId && onMove(selectedId)}
+            className="bg-accent-primary text-white hover:bg-accent-primary/90 disabled:opacity-40"
+          >
+            移动
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const NoteCard = React.forwardRef<HTMLDivElement, {
@@ -75,6 +223,7 @@ export default function NoteList() {
   const { state } = useApp();
   const actions = useAppActions();
   const { menu, menuRef, openMenu, closeMenu } = useContextMenu();
+  const [moveModal, setMoveModal] = useState<{ noteId: string; noteTitle: string; notebookId: string } | null>(null);
 
   const fetchNotes = useCallback(async () => {
     actions.setLoading(true);
@@ -155,6 +304,12 @@ export default function NoteList() {
         icon: targetNote.isFavorite === 1 ? <StarOff size={14} /> : <Star size={14} />,
       },
       { id: "sep1", label: "", separator: true },
+      {
+        id: "move",
+        label: "移动到...",
+        icon: <FolderInput size={14} />,
+      },
+      { id: "sep2", label: "", separator: true },
       { id: "trash", label: "移入回收站", icon: <Trash2 size={14} />, danger: true },
     ];
   };
@@ -186,6 +341,14 @@ export default function NoteList() {
         await fetchNotes();
         break;
       }
+      case "move": {
+        setMoveModal({
+          noteId: targetId,
+          noteTitle: targetNote.title,
+          notebookId: targetNote.notebookId,
+        });
+        break;
+      }
       case "restore": {
         await api.updateNote(targetId, { isTrashed: 0 } as any);
         await fetchNotes();
@@ -198,6 +361,16 @@ export default function NoteList() {
         break;
       }
     }
+  };
+
+  const handleMoveNote = async (targetNotebookId: string) => {
+    if (!moveModal) return;
+    await api.updateNote(moveModal.noteId, { notebookId: targetNotebookId } as any);
+    if (state.activeNote?.id === moveModal.noteId) {
+      actions.setActiveNote({ ...state.activeNote, notebookId: targetNotebookId });
+    }
+    setMoveModal(null);
+    await fetchNotes();
   };
 
   const viewTitles: Record<string, string> = {
@@ -282,6 +455,16 @@ export default function NoteList() {
         items={getMenuItems()}
         onAction={handleMenuAction}
         header={state.notes.find((n) => n.id === menu.targetId)?.title || "笔记"}
+      />
+
+      {/* Move Note Modal */}
+      <MoveNoteModal
+        isOpen={!!moveModal}
+        noteTitle={moveModal?.noteTitle || ""}
+        currentNotebookId={moveModal?.notebookId || ""}
+        notebooks={state.notebooks}
+        onMove={handleMoveNote}
+        onClose={() => setMoveModal(null)}
       />
     </div>
   );

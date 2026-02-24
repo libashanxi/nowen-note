@@ -130,6 +130,16 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (parentId) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
+    -- 自定义字体表
+    CREATE TABLE IF NOT EXISTS custom_fonts (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      fileName TEXT NOT NULL UNIQUE,
+      format TEXT NOT NULL,
+      fileSize INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- 全文搜索虚拟表
     CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
       title,
