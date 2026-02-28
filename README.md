@@ -41,12 +41,16 @@ nowen-note/
 │   │   │   ├── ContextMenu.tsx      # 通用右键菜单组件
 │   │   │   ├── SettingsModal.tsx    # 设置中心（外观/安全/数据）
 │   │   │   ├── SecuritySettings.tsx # 账号安全设置
-│   │   │   └── DataManager.tsx      # 数据管理（导入导出 + 恢复出厂）
+│   │   │   ├── DataManager.tsx      # 数据管理（导入导出 + 恢复出厂）
+│   │   │   ├── MiCloudImport.tsx   # 小米云笔记导入
+│   │   │   └── OppoCloudImport.tsx # OPPO 云便签导入
 │   │   ├── hooks/         # 自定义 Hooks
 │   │   │   ├── useContextMenu.ts    # 右键菜单状态管理 + 边缘碰撞检测
 │   │   │   └── useSiteSettings.tsx  # 站点设置 Context（标题/图标/字体）
 │   │   ├── store/         # 状态管理（useReducer + Context）
 │   │   ├── lib/           # 工具函数 & API 封装
+│   │   │   ├── api.ts            # API 客户端
+│   │   │   └── miNoteService.ts  # 小米云笔记服务封装
 │   │   └── types/         # 类型定义
 │   └── ...
 ├── backend/               # 后端 Hono 应用
@@ -61,7 +65,9 @@ nowen-note/
 │       │   ├── search.ts      # 全文搜索
 │       │   ├── export.ts      # 数据导入导出
 │       │   ├── settings.ts    # 站点设置（标题/图标/字体）
-│       │   └── fonts.ts       # 自定义字体管理（上传/下载/删除）
+│       │   ├── fonts.ts       # 自定义字体管理（上传/下载/删除）
+│       │   ├── micloud.ts    # 小米云笔记导入 API
+│       │   └── oppocloud.ts  # OPPO 云便签导入 API
 │       └── index.ts       # 入口文件（JWT 中间件 + 路由注册）
 ├── Dockerfile             # 多阶段构建
 ├── docker-compose.yml     # 容器编排
@@ -320,6 +326,8 @@ docker run -d \
 #### 数据管理
 - **导出备份**：全量导出为 ZIP 压缩包（Markdown + YAML frontmatter），含进度条
 - **导入笔记**：支持拖拽上传 `.md` / `.txt` / `.zip` 文件，可选择目标笔记本
+- **小米云笔记导入**：通过 Cookie 认证连接小米云服务，自动获取笔记列表并批量导入
+- **OPPO 云便签导入**：提供浏览器控制台提取脚本（OPPO 便签内容 AES 加密，仅页面端解密），一键复制脚本 → 粘贴 JSON → 选择导入
 - **恢复出厂设置**：清空所有数据并重置管理员账户，二次确认防误触（需输入 `RESET`）
 
 #### 设置中心
@@ -370,12 +378,16 @@ nowen-note/
 │   │   │   ├── ContextMenu.tsx      # Reusable context menu component
 │   │   │   ├── SettingsModal.tsx    # Settings center (appearance/security/data)
 │   │   │   ├── SecuritySettings.tsx # Account security settings
-│   │   │   └── DataManager.tsx      # Data management (import/export + factory reset)
+│   │   │   ├── DataManager.tsx      # Data management (import/export + factory reset)
+│   │   │   ├── MiCloudImport.tsx   # Mi Cloud notes import
+│   │   │   └── OppoCloudImport.tsx # OPPO Cloud sticky notes import
 │   │   ├── hooks/         # Custom Hooks
 │   │   │   ├── useContextMenu.ts    # Context menu state + edge collision detection
 │   │   │   └── useSiteSettings.tsx  # Site settings Context (title/favicon/font)
 │   │   ├── store/         # State management (useReducer + Context)
 │   │   ├── lib/           # Utilities & API client
+│   │   │   ├── api.ts            # API client
+│   │   │   └── miNoteService.ts  # Mi Cloud notes service wrapper
 │   │   └── types/         # Type definitions
 │   └── ...
 ├── backend/               # Hono backend app
@@ -390,7 +402,9 @@ nowen-note/
 │       │   ├── search.ts      # Full-text search
 │       │   ├── export.ts      # Data import/export
 │       │   ├── settings.ts    # Site settings (title/favicon/font)
-│       │   └── fonts.ts       # Custom font management (upload/download/delete)
+│       │   ├── fonts.ts       # Custom font management (upload/download/delete)
+│       │   ├── micloud.ts    # Mi Cloud notes import API
+│       │   └── oppocloud.ts  # OPPO Cloud sticky notes import API
 │       └── index.ts       # Entry point (JWT middleware + route registration)
 ├── Dockerfile             # Multi-stage build
 ├── docker-compose.yml     # Container orchestration
@@ -524,6 +538,8 @@ All NAS platforms with Docker support follow the same general steps:
 #### Data Management
 - **Export backup**: Full export as ZIP archive (Markdown + YAML frontmatter) with progress bar
 - **Import notes**: Drag-and-drop `.md` / `.txt` / `.zip` files, choose target notebook
+- **Mi Cloud import**: Connect to Xiaomi Cloud via cookie authentication, auto-fetch note list and batch import
+- **OPPO Cloud import**: Browser console extraction script (OPPO notes are AES-encrypted, decrypted only on the client side), copy script → paste JSON → select and import
 - **Factory reset**: Wipe all data and reset admin account, requires typing `RESET` to confirm
 
 #### Settings Center
