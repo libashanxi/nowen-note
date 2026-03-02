@@ -2,7 +2,10 @@ version: "3.8"
 
 services:
   nowen-note:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nowen-note:latest
     container_name: nowen-note
     restart: unless-stopped
     ports:
