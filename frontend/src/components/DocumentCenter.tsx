@@ -65,8 +65,13 @@ function OnlyOfficeEditor({
 
         if (destroyed) return;
 
+        // 动态推算 ONLYOFFICE 公网地址：与当前页面同主机，端口 8080
+        const effectiveOnlyofficeUrl = onlyofficeUrl === "http://localhost:8080"
+          ? `${window.location.protocol}//${window.location.hostname}:8080`
+          : onlyofficeUrl;
+
         // 动态加载 ONLYOFFICE API 脚本
-        const apiUrl = `${onlyofficeUrl}/web-apps/apps/api/documents/api.js`;
+        const apiUrl = `${effectiveOnlyofficeUrl}/web-apps/apps/api/documents/api.js`;
 
         // 检查是否已加载
         if (!(window as any).DocsAPI) {
@@ -103,7 +108,10 @@ function OnlyOfficeEditor({
             },
             onError: (event: any) => {
               console.error("ONLYOFFICE error:", event);
-              if (!destroyed) setError(t("documents.editorError"));
+              if (!destroyed) {
+                setError(t("documents.editorError"));
+                setLoading(false);
+              }
             },
           },
         });
