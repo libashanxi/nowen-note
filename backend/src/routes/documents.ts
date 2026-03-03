@@ -3,6 +3,7 @@ import { getDb } from "../db/schema";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs";
 import path from "path";
+import JSZip from "jszip";
 
 const app = new Hono();
 
@@ -53,8 +54,68 @@ function ensureTable() {
 
 ensureTable();
 
+// 创建最小有效的空白 docx（PK zip 结构）
+function createEmptyDocx() {
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t></w:t></w:r></w:p>
+  </w:body>
+</w:document>`;
+
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", contentTypes);
+  zip.file("_rels/.rels", rels);
+  zip.file("word/document.xml", document);
+  return zip;
+}
+
+function createEmptyXlsx() {
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`;
+  const sheet1 = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+</worksheet>`;
+
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", contentTypes);
+  zip.file("_rels/.rels", rels);
+  zip.file("xl/workbook.xml", workbook);
+  zip.file("xl/_rels/workbook.xml.rels", wbRels);
+  zip.file("xl/worksheets/sheet1.xml", sheet1);
+  return zip;
+}
+
 // 创建空白文档模板
-function createEmptyDocument(docType: string): Buffer {
+async function createEmptyDocument(docType: string): Promise<Buffer> {
   const templates: Record<string, string> = {
     word: path.join(__dirname, "../../templates/empty.docx"),
     cell: path.join(__dirname, "../../templates/empty.xlsx"),
@@ -63,6 +124,16 @@ function createEmptyDocument(docType: string): Buffer {
   const templatePath = templates[docType];
   if (templatePath && fs.existsSync(templatePath)) {
     return fs.readFileSync(templatePath);
+  }
+
+  // 动态生成最小有效文档
+  if (docType === "word") {
+    const zip = createEmptyDocx();
+    return Buffer.from(await zip.generateAsync({ type: "nodebuffer" }));
+  }
+  if (docType === "cell") {
+    const zip = createEmptyXlsx();
+    return Buffer.from(await zip.generateAsync({ type: "nodebuffer" }));
   }
 
   return Buffer.alloc(0);
@@ -114,7 +185,7 @@ app.post("/", async (c) => {
   const fileKey = `${id}.${typeInfo.ext}`;
   const filePath = path.join(DOCS_DIR, fileKey);
 
-  const content = createEmptyDocument(docType);
+  const content = await createEmptyDocument(docType);
   fs.writeFileSync(filePath, content);
   const fileSize = content.length;
 
