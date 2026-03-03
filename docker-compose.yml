@@ -16,6 +16,7 @@ services:
       - PORT=3001
       - ONLYOFFICE_URL=http://onlyoffice:80
       - ONLYOFFICE_JWT_SECRET=nowen-note-onlyoffice-secret
+      - APP_CALLBACK_URL=http://nowen-note:3001
       # Ollama 地址，如需使用请自行部署 Ollama 并填写正确地址
       # - OLLAMA_URL=http://host.docker.internal:11434
     depends_on:
