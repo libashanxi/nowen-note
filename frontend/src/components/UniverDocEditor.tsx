@@ -113,6 +113,18 @@ export default function UniverDocEditor({ documentId, title, onBack }: UniverDoc
     }
   }, [documentId]);
 
+  // Ctrl+S 快捷键保存
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleSave]);
+
   if (error) {
     return (
       <div className="flex-1 flex items-center justify-center bg-app-bg">

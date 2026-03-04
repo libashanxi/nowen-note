@@ -84,7 +84,7 @@ nowen-note/
 │       │   └── oppocloud.ts   # OPPO 云便签导入 API
 │       └── index.ts       # 入口文件（JWT 中间件 + 路由注册 + 静态文件托管）
 ├── Dockerfile             # 多阶段构建（3 阶段）
-├── docker-compose.yml     # 容器编排（3 服务 + 4 持久化卷）
+├── docker-compose.yml     # 容器编排（单服务 + 持久化卷）
 └── package.json           # 根级脚本
 ```
 
@@ -357,11 +357,12 @@ docker run -d \
 - **卡片式 Provider 选择**：渐变色图标、配置状态指示、自动填充 URL 和模型
 - **连接测试 & 模型列表拉取**：实时验证配置可用性
 
-#### 文档中心（OnlyOffice）
-- **在线编辑**：Word、Excel、PowerPoint 在线协同编辑
+#### 文档中心（Univer.js）
+- **浏览器端编辑**：基于 Univer.js 的 Word、Excel 在线编辑，无需服务端文档服务器
+- **Ctrl+S 快捷保存**：支持键盘快捷键 Ctrl+S（Mac 为 Cmd+S）保存文档和表格
 - **文档管理**：创建、上传、下载、搜索、重命名、批量删除
-- **JWT 安全认证**：OnlyOffice 与应用间的安全通信
-- **文件类型**：Word（蓝色）、Excel（绿色）、PPT（橙色）图标区分
+- **文件格式**：Word（docx）和 Excel（xlsx）双向读写，保留文字样式和图片
+- **文件类型**：Word（蓝色）、Excel（绿色）图标区分
 
 #### 思维导图
 - 可视化脑图编辑器，自研树形布局算法
@@ -418,32 +419,30 @@ docker run -d \
 ### Docker Compose 架构
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Docker Compose                     │
-│                                                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │ nowen-note  │  │  OnlyOffice  │  │   Ollama   │ │
-│  │  :3001      │  │   :8080      │  │  :11434    │ │
-│  │             │  │              │  │            │ │
-│  │ ┌─────────┐ │  │  Word/Excel/ │  │  本地 AI   │ │
-│  │ │Frontend │ │  │  PPT 在线编辑│  │  推理引擎  │ │
-│  │ │ React   │ │  │              │  │            │ │
-│  │ │ Tiptap  │ │  └──────────────┘  └────────────┘ │
-│  │ ├─────────┤ │                                    │
-│  │ │Backend  │ │    外部 AI API:                    │
-│  │ │ Hono    │◄────► 通义千问 / OpenAI / Gemini     │
-│  │ │ SQLite  │ │    DeepSeek / 豆包                  │
-│  │ │ JWT     │ │                                    │
-│  │ └─────────┘ │                                    │
-│  └─────────────┘                                    │
-└─────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│              Docker Compose                │
+│                                           │
+│  ┌─────────────────────────────────────┐  │
+│  │           nowen-note :3001          │  │
+│  │                                     │  │
+│  │  ┌─────────────┐                    │  │
+│  │  │  Frontend   │  Univer.js         │  │
+│  │  │  React      │  Word/Excel 编辑   │  │
+│  │  │  Tiptap     │  （浏览器端）       │  │
+│  │  ├─────────────┤                    │  │
+│  │  │  Backend    │                    │  │
+│  │  │  Hono       │◄──► 外部 AI API:   │  │
+│  │  │  SQLite     │     通义千问       │  │
+│  │  │  JWT        │     OpenAI/Gemini  │  │
+│  │  │             │     DeepSeek/豆包   │  │
+│  │  └─────────────┘     Ollama（可选）  │  │
+│  └─────────────────────────────────────┘  │
+└───────────────────────────────────────────┘
 ```
 
 | 服务 | 镜像 | 端口 | 持久化卷 | 说明 |
 |------|------|------|---------|------|
-| nowen-note | 自构建 | 3001 | nowen-note-data | 主应用（前后端一体 + SQLite） |
-| onlyoffice | onlyoffice/documentserver | 8080 | onlyoffice-data, onlyoffice-logs | 文档在线编辑服务器（JWT 认证） |
-| ollama | ollama/ollama | 11434 | ollama-data | 本地 AI 推理（可选 GPU 加速） |
+| nowen-note | 自构建 | 3001 | nowen-note-data | 主应用（前后端一体 + SQLite + Univer.js 文档编辑） |
 
 ### 数据库设计
 
@@ -468,7 +467,7 @@ docker run -d \
 
 ### Introduction
 
-nowen-note is a self-hosted private knowledge management application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring a Tiptap rich-text editor, AI-powered writing assistant (supporting 6 major AI providers + local Ollama), OnlyOffice document collaboration (Word/Excel/PPT), mind mapping, task management, FTS5 full-text search, data import/export, and more — an all-in-one knowledge management platform.
+nowen-note is a self-hosted private knowledge management application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring a Tiptap rich-text editor, AI-powered writing assistant (supporting 6 major AI providers + local Ollama), Univer.js browser-based Word/Excel editing (no server-side document service required), mind mapping, task management, FTS5 full-text search, data import/export, and more — an all-in-one knowledge management platform.
 
 ### Tech Stack
 
@@ -483,7 +482,7 @@ nowen-note is a self-hosted private knowledge management application with a mode
 | Database      | SQLite (better-sqlite3) + FTS5 full-text search                              |
 | Auth          | JWT (jsonwebtoken) + bcryptjs password hashing                                |
 | Validation    | Zod                                                                           |
-| Document      | OnlyOffice Document Server (JWT authentication)                               |
+| Document      | Univer.js (browser-based Word/Excel editing, Ctrl+S save)                     |
 | AI Engine     | Qwen / OpenAI / Google Gemini / DeepSeek / Doubao / Ollama                   |
 | Data Utils    | JSZip (compression), Turndown (HTML→Markdown), FileSaver                      |
 | Markdown      | react-markdown + remark-gfm (AI chat rendering)                              |
@@ -553,8 +552,6 @@ Visit `http://<your-ip>:3001` in your browser.
 | Port | Service | Description |
 |------|---------|-------------|
 | `3001` | nowen-note | Main app (frontend + backend + SQLite) |
-| `8080` | OnlyOffice | Online document editing server |
-| `11434` | Ollama | Local AI inference (optional) |
 
 **Environment Variables:**
 
@@ -563,9 +560,7 @@ Visit `http://<your-ip>:3001` in your browser.
 | `PORT` | `3001` | Server listen port |
 | `DB_PATH` | `/app/data/nowen-note.db` | Database file path |
 | `NODE_ENV` | `production` | Runtime environment |
-| `ONLYOFFICE_URL` | `http://onlyoffice:80` | OnlyOffice service URL |
-| `ONLYOFFICE_JWT_SECRET` | `nowen-note-onlyoffice-secret` | OnlyOffice JWT secret |
-| `OLLAMA_URL` | `http://ollama:11434` | Ollama service URL (Docker internal) |
+| `OLLAMA_URL` | (not set) | Ollama service URL (deploy Ollama yourself if local AI is needed) |
 
 #### Option 3: NAS Deployment (Synology / QNAP / UGREEN / fnOS / Zspace)
 
@@ -630,11 +625,12 @@ All NAS platforms with Docker support follow the same general steps:
 - **Card-style provider selection**: Gradient icons, config status indicators, auto-fill URL & model
 - **Connection test & model list fetch**: Real-time configuration validation
 
-#### Document Center (OnlyOffice)
-- **Online editing**: Word, Excel, PowerPoint online collaborative editing
+#### Document Center (Univer.js)
+- **Browser-based editing**: Word and Excel online editing powered by Univer.js, no server-side document service required
+- **Ctrl+S quick save**: Keyboard shortcut Ctrl+S (Cmd+S on Mac) to save documents and spreadsheets
 - **Document management**: Create, upload, download, search, rename, batch delete
-- **JWT authentication**: Secure communication between OnlyOffice and the app
-- **File type icons**: Word (blue), Excel (green), PPT (orange)
+- **File format support**: Word (docx) and Excel (xlsx) bi-directional read/write, preserving text styles and images
+- **File type icons**: Word (blue), Excel (green)
 
 #### Mind Mapping
 - Visual mind map editor with custom tree layout algorithm
@@ -691,29 +687,27 @@ All NAS platforms with Docker support follow the same general steps:
 ### Docker Compose Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Docker Compose                     │
-│                                                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │ nowen-note  │  │  OnlyOffice  │  │   Ollama   │ │
-│  │  :3001      │  │   :8080      │  │  :11434    │ │
-│  │             │  │              │  │            │ │
-│  │ ┌─────────┐ │  │  Word/Excel/ │  │  Local AI  │ │
-│  │ │Frontend │ │  │  PPT editing │  │  inference │ │
-│  │ │ React   │ │  │              │  │            │ │
-│  │ │ Tiptap  │ │  └──────────────┘  └────────────┘ │
-│  │ ├─────────┤ │                                    │
-│  │ │Backend  │ │    External AI APIs:               │
-│  │ │ Hono    │◄────► Qwen / OpenAI / Gemini         │
-│  │ │ SQLite  │ │    DeepSeek / Doubao               │
-│  │ │ JWT     │ │                                    │
-│  │ └─────────┘ │                                    │
-│  └─────────────┘                                    │
-└─────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│              Docker Compose                │
+│                                           │
+│  ┌─────────────────────────────────────┐  │
+│  │           nowen-note :3001          │  │
+│  │                                     │  │
+│  │  ┌─────────────┐                    │  │
+│  │  │  Frontend   │  Univer.js         │  │
+│  │  │  React      │  Word/Excel edit   │  │
+│  │  │  Tiptap     │  (browser-side)    │  │
+│  │  ├─────────────┤                    │  │
+│  │  │  Backend    │                    │  │
+│  │  │  Hono       │◄──► External AI:   │  │
+│  │  │  SQLite     │     Qwen/OpenAI    │  │
+│  │  │  JWT        │     Gemini/DeepSeek│  │
+│  │  │             │     Doubao/Ollama  │  │
+│  │  └─────────────┘                    │  │
+│  └─────────────────────────────────────┘  │
+└───────────────────────────────────────────┘
 ```
 
 | Service | Image | Port | Volumes | Description |
 |---------|-------|------|---------|-------------|
-| nowen-note | Self-built | 3001 | nowen-note-data | Main app (frontend + backend + SQLite) |
-| onlyoffice | onlyoffice/documentserver | 8080 | onlyoffice-data, onlyoffice-logs | Online document editing (JWT auth) |
-| ollama | ollama/ollama | 11434 | ollama-data | Local AI inference (optional GPU) |
+| nowen-note | Self-built | 3001 | nowen-note-data | Main app (frontend + backend + SQLite + Univer.js doc editing) |
