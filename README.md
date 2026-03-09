@@ -10,7 +10,7 @@ A self-hosted private knowledge base, inspired by Synology Note Station.
 
 ### 简介
 
-nowen-note 是一款自托管的私有化知识管理应用，采用现代前后端分离架构，支持 Docker 一键部署。集成 Tiptap 富文本编辑器、AI 智能写作助手（支持 6 大 AI 服务商 + 本地 Ollama）、OnlyOffice 在线文档协作（Word/Excel/PPT）、思维导图、任务管理中心、FTS5 全文搜索、数据导入导出等功能，打造一体化知识管理平台。
+nowen-note 是一款自托管的私有化知识管理应用，采用现代前后端分离架构，支持 Docker 一键部署。集成 Tiptap 富文本编辑器、AI 智能写作助手（支持 6 大 AI 服务商 + 本地 Ollama）、Univer.js 浏览器端文档编辑（Word/Excel）、思维导图、任务管理中心、FTS5 全文搜索、数据导入导出等功能，打造一体化知识管理平台。
 
 ### 技术栈
 
@@ -25,7 +25,7 @@ nowen-note 是一款自托管的私有化知识管理应用，采用现代前后
 | 数据库   | SQLite（better-sqlite3）+ FTS5 全文搜索                      |
 | 认证     | JWT（jsonwebtoken）+ bcryptjs 密码哈希                       |
 | 数据校验 | Zod                                                          |
-| 文档协作 | OnlyOffice Document Server（JWT 安全认证）                   |
+| 文档编辑 | Univer.js（浏览器端 Word/Excel 编辑，无需服务端）            |
 | AI 引擎  | 通义千问 / OpenAI / Google Gemini / DeepSeek / 豆包 / Ollama |
 | 数据处理 | JSZip（压缩打包）、Turndown（HTML→Markdown）、FileSaver      |
 | Markdown | react-markdown + remark-gfm（AI 聊天渲染）                   |
@@ -46,7 +46,7 @@ nowen-note/
 │   │   │   ├── AISettingsPanel.tsx    # AI 服务配置（6 大 Provider 卡片）
 │   │   │   ├── TaskCenter.tsx         # 任务管理中心
 │   │   │   ├── MindMapEditor.tsx      # 思维导图编辑器
-│   │   │   ├── DocumentCenter.tsx     # 文档中心（OnlyOffice 集成）
+│   │   │   ├── DocumentCenter.tsx     # 文档中心（Univer.js 集成）
 │   │   │   ├── LoginPage.tsx          # 登录页
 │   │   │   ├── ContextMenu.tsx        # 通用右键菜单组件
 │   │   │   ├── SettingsModal.tsx      # 设置中心（外观/AI/安全/数据）
@@ -66,7 +66,7 @@ nowen-note/
 │   └── ...
 ├── backend/               # 后端 Hono 应用
 │   └── src/
-│       ├── db/            # 数据库 Schema & 迁移（10 张表 + FTS5）
+│       ├── db/            # 数据库 Schema & 迁移（9 张表 + FTS5）
 │       ├── routes/        # API 路由（14 个模块）
 │       │   ├── auth.ts        # 认证（登录/改密/恢复出厂）
 │       │   ├── notebooks.ts   # 笔记本 CRUD（无限层级）
@@ -74,7 +74,7 @@ nowen-note/
 │       │   ├── tags.ts        # 标签管理
 │       │   ├── tasks.ts       # 待办任务（子任务/优先级/截止日期）
 │       │   ├── mindmaps.ts    # 思维导图 CRUD
-│       │   ├── documents.ts   # 文档管理（OnlyOffice 集成）
+│       │   ├── documents.ts   # 文档管理
 │       │   ├── ai.ts          # AI 聊天 + 写作助手 + RAG 知识问答
 │       │   ├── search.ts      # FTS5 全文搜索
 │       │   ├── export.ts      # 数据导入导出
@@ -132,7 +132,7 @@ npm run dev:frontend
 git clone https://github.com/cropflre/nowen-note.git
 cd nowen-note
 
-# 2. 一键构建并启动（含 OnlyOffice + Ollama）
+# 2. 一键构建并启动
 docker-compose up -d
 ```
 
@@ -161,9 +161,7 @@ docker run -d \
 
 | 端口 | 服务 | 说明 |
 |------|------|------|
-| `3001` | nowen-note | 主应用（前后端一体 + SQLite） |
-| `8080` | OnlyOffice | Word/Excel/PPT 在线编辑服务器 |
-| `11434` | Ollama | 本地 AI 推理服务（可选） |
+| `3001` | nowen-note | 主应用（前后端一体 + SQLite + Univer.js 文档编辑） |
 
 **环境变量说明：**
 
@@ -172,9 +170,7 @@ docker run -d \
 | `PORT` | `3001` | 服务监听端口 |
 | `DB_PATH` | `/app/data/nowen-note.db` | 数据库文件路径 |
 | `NODE_ENV` | `production` | 运行环境 |
-| `ONLYOFFICE_URL` | `http://onlyoffice:80` | OnlyOffice 服务地址 |
-| `ONLYOFFICE_JWT_SECRET` | `nowen-note-onlyoffice-secret` | OnlyOffice JWT 密钥 |
-| `OLLAMA_URL` | `http://ollama:11434` | Ollama 服务地址（Docker 内部） |
+| `OLLAMA_URL` | （未设置） | Ollama 服务地址（如需本地 AI 请自行部署 Ollama） |
 
 ---
 
@@ -305,8 +301,7 @@ docker run -d \
 - **数据备份**：只需备份映射目录中的 `nowen-note.db` 文件
 - **端口冲突**：如 3001 端口被占用，可修改主机端口映射（如 `8080:3001`）
 - **安全建议**：首次登录后请立即修改默认密码；如需外网访问，建议搭配反向代理（Nginx / Caddy）并启用 HTTPS
-- **OnlyOffice**：需要 docker-compose 方式部署才能使用文档编辑功能
-- **Ollama**：docker-compose 默认包含 Ollama 服务，首次启动需拉取模型（如 `docker exec nowen-ollama ollama pull qwen2.5:7b`）
+- **Ollama**：如需本地 AI 推理，请自行部署 Ollama 服务并配置 `OLLAMA_URL` 环境变量
 
 ### 核心功能
 
@@ -446,7 +441,7 @@ docker run -d \
 
 ### 数据库设计
 
-10 张数据表 + 1 张 FTS5 全文搜索虚拟表：
+9 张数据表 + 1 张 FTS5 全文搜索虚拟表：
 
 | 表名 | 说明 |
 |------|------|

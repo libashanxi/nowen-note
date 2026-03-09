@@ -79,19 +79,7 @@ export interface SearchResult {
 
 export type ViewMode = "notebook" | "favorites" | "trash" | "all" | "search" | "tasks" | "tag" | "mindmaps" | "documents" | "ai-chat" | "diary";
 
-export interface DiaryEntry {
-  id: string;
-  userId: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
-export interface DiaryPage {
-  items: DiaryEntry[];
-  nextCursor: string | null;
-  hasMore: boolean;
-}
 
 export type DocType = "word" | "cell";
 

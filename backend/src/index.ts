@@ -116,7 +116,7 @@ app.route("/api/oppocloud", oppoCloudRouter);
 app.route("/api/mindmaps", mindmapsRouter);
 app.route("/api/documents", documentsRouter);
 app.route("/api/ai", aiRouter);
-app.route("/api/diary", diaryRouter);
+
 app.route("/api/settings", settingsRouter);
 app.route("/api/fonts", fontsRouter);
 

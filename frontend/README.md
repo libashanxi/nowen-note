@@ -10,7 +10,7 @@ A self-hosted private note-taking app, inspired by Synology Note Station.
 
 ### 简介
 
-nowen-note 是一款自托管的私有化笔记应用，采用现代前后端分离架构，支持 Docker 一键部署。集成 Tiptap 富文本编辑器、AI 智能写作助手、OnlyOffice 在线文档协作、思维导图、任务管理等功能，打造一体化知识管理平台。
+nowen-note 是一款自托管的私有化笔记应用，采用现代前后端分离架构，支持 Docker 一键部署。集成 Tiptap 富文本编辑器、AI 智能写作助手、Univer.js 浏览器端文档编辑（Word/Excel）、思维导图、任务管理等功能，打造一体化知识管理平台。
 
 ### 技术栈
 
@@ -24,7 +24,7 @@ nowen-note 是一款自托管的私有化笔记应用，采用现代前后端分
 | 后端框架 | Hono 4 + @hono/node-server |
 | 数据库 | SQLite（better-sqlite3）+ FTS5 全文搜索 |
 | 数据校验 | Zod |
-| 文档协作 | OnlyOffice Document Server |
+| 文档编辑 | Univer.js（浏览器端 Word/Excel 编辑，无需服务端） |
 | AI 引擎 | OpenAI / 通义千问 / DeepSeek / Gemini / 豆包 / Ollama |
 
 ### 项目结构
@@ -43,7 +43,7 @@ nowen-note/
 │   │   │   ├── AISettingsPanel  # AI 服务配置面板
 │   │   │   ├── TaskCenter       # 任务管理中心
 │   │   │   ├── MindMapEditor    # 思维导图编辑器
-│   │   │   ├── DocumentCenter   # 文档中心（OnlyOffice）
+│   │   │   ├── DocumentCenter   # 文档中心（Univer.js）
 │   │   │   ├── DataManager      # 数据导入导出
 │   │   │   └── SettingsModal    # 设置弹窗
 │   │   ├── store/         # 状态管理（useReducer + Context）
@@ -60,7 +60,7 @@ nowen-note/
 │       │   ├── tags         # 标签管理
 │       │   ├── tasks        # 任务管理 + 子任务
 │       │   ├── mindmaps     # 思维导图 CRUD
-│       │   ├── documents    # 文档管理 + OnlyOffice
+│       │   ├── documents    # 文档管理
 │       │   ├── ai           # AI 聊天 + 写作助手 + RAG 问答
 │       │   ├── search       # FTS5 全文搜索
 │       │   ├── auth         # 用户认证 + JWT
@@ -71,7 +71,7 @@ nowen-note/
 │       │   └── oppocloud    # OPPO 云便签导入
 │       └── index.ts       # 入口文件
 ├── Dockerfile             # 多阶段构建
-├── docker-compose.yml     # 容器编排（3 服务）
+├── docker-compose.yml     # 容器编排（单服务）
 └── package.json           # 根级脚本
 ```
 
@@ -99,9 +99,7 @@ docker-compose up -d
 访问 `http://localhost:3001` 即可使用。
 
 服务端口：
-- `3001` — nowen-note 主应用
-- `8080` — OnlyOffice 文档服务器
-- `11434` — Ollama 本地 AI 推理（可选）
+- `3001` — nowen-note 主应用（含 Univer.js 文档编辑）
 
 ### 核心功能
 
@@ -129,10 +127,11 @@ docker-compose up -d
 - **画布交互**：缩放、平移、自适应视图
 - **导出**：PNG / SVG 格式
 
-#### 文档中心（OnlyOffice）
-- **在线编辑**：Word、Excel、PowerPoint 在线协同编辑
-- **文档管理**：创建、上传、下载、搜索
-- **JWT 安全认证**：OnlyOffice 与应用间的安全通信
+#### 文档中心（Univer.js）
+- **浏览器端编辑**：基于 Univer.js 的 Word、Excel 在线编辑，无需服务端文档服务器
+- **Ctrl+S 快捷保存**：支持键盘快捷键 Ctrl+S（Mac 为 Cmd+S）保存文档和表格
+- **文档管理**：创建、上传、下载、搜索、重命名、批量删除
+- **文件格式**：Word（docx）和 Excel（xlsx）双向读写，保留文字样式和图片
 
 #### 任务管理
 - **任务中心**：独立的任务管理面板
@@ -158,9 +157,7 @@ docker-compose up -d
 
 | 服务 | 镜像 | 端口 | 说明 |
 |------|------|------|------|
-| nowen-note | 自构建 | 3001 | 主应用（前后端一体 + SQLite） |
-| onlyoffice | onlyoffice/documentserver | 8080 | 文档在线编辑服务器 |
-| ollama | ollama/ollama | 11434 | 本地 AI 推理服务（可选 GPU 加速） |
+| nowen-note | 自构建 | 3001 | 主应用（前后端一体 + SQLite + Univer.js 文档编辑） |
 
 ---
 
@@ -168,7 +165,7 @@ docker-compose up -d
 
 ### Introduction
 
-nowen-note is a self-hosted private note-taking application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring a Tiptap rich-text editor, AI-powered writing assistant, OnlyOffice document collaboration, mind mapping, task management, and more — an all-in-one knowledge management platform.
+nowen-note is a self-hosted private note-taking application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring a Tiptap rich-text editor, AI-powered writing assistant, Univer.js browser-based document editing (Word/Excel), mind mapping, task management, and more — an all-in-one knowledge management platform.
 
 ### Tech Stack
 
@@ -182,7 +179,7 @@ nowen-note is a self-hosted private note-taking application with a modern fronte
 | Backend | Hono 4 + @hono/node-server |
 | Database | SQLite (better-sqlite3) + FTS5 full-text search |
 | Validation | Zod |
-| Document Collaboration | OnlyOffice Document Server |
+| Document Editing | Univer.js (browser-based Word/Excel editing) |
 | AI Engine | OpenAI / Qwen / DeepSeek / Gemini / Doubao / Ollama |
 
 ### Quick Start
@@ -209,9 +206,7 @@ docker-compose up -d
 Visit `http://localhost:3001` to use the app.
 
 Service Ports:
-- `3001` — nowen-note main app
-- `8080` — OnlyOffice Document Server
-- `11434` — Ollama local AI inference (optional)
+- `3001` — nowen-note main app (with Univer.js document editing)
 
 ### Key Features
 
@@ -239,10 +234,11 @@ Service Ports:
 - **Canvas interaction**: Zoom, pan, fit-to-view
 - **Export**: PNG / SVG formats
 
-#### Document Center (OnlyOffice)
-- **Online editing**: Word, Excel, PowerPoint online collaborative editing
-- **Document management**: Create, upload, download, search
-- **JWT authentication**: Secure communication between OnlyOffice and the app
+#### Document Center (Univer.js)
+- **Browser-based editing**: Word and Excel online editing powered by Univer.js, no server-side document service required
+- **Ctrl+S quick save**: Keyboard shortcut Ctrl+S (Cmd+S on Mac) to save documents and spreadsheets
+- **Document management**: Create, upload, download, search, rename, batch delete
+- **File format support**: Word (docx) and Excel (xlsx) bi-directional read/write, preserving text styles and images
 
 #### Task Management
 - **Task Center**: Dedicated task management panel
@@ -268,6 +264,4 @@ Service Ports:
 
 | Service | Image | Port | Description |
 |---------|-------|------|-------------|
-| nowen-note | Self-built | 3001 | Main app (frontend + backend + SQLite) |
-| onlyoffice | onlyoffice/documentserver | 8080 | Online document editing server |
-| ollama | ollama/ollama | 11434 | Local AI inference (optional GPU acceleration) |
+| nowen-note | Self-built | 3001 | Main app (frontend + backend + SQLite + Univer.js document editing) |
