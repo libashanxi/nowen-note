@@ -7,9 +7,5 @@
     "dev:frontend": "cd frontend && npx vite",
     "install:all": "cd backend && npm install && cd ../frontend && npm install"
   },
-  "dependencies": {
-    "@univerjs/presets": "^0.16.1",
-    "mammoth": "^1.11.0",
-    "word-extractor": "^1.0.4"
-  }
+  "dependencies": {}
 }

@@ -77,32 +77,13 @@ export interface SearchResult {
   snippet: string;
 }
 
-export type ViewMode = "notebook" | "favorites" | "trash" | "all" | "search" | "tasks" | "tag" | "mindmaps" | "documents" | "ai-chat" | "diary";
+export type ViewMode = "notebook" | "favorites" | "trash" | "all" | "search" | "tasks" | "tag" | "mindmaps" | "ai-chat" | "diary";
+
+export type TaskPriority
 
 
 
-export type DocType = "word" | "cell";
 
-export interface DocumentItem {
-  id: string;
-  userId: string;
-  title: string;
-  docType: DocType;
-  fileKey: string;
-  fileSize: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface DocumentListItem {
-  id: string;
-  userId: string;
-  title: string;
-  docType: DocType;
-  fileSize: number;
-  createdAt: string;
-  updatedAt: string;
-}
 
 export type TaskPriority = 1 | 2 | 3; // 1=低, 2=中, 3=高
 

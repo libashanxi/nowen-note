@@ -17,7 +17,7 @@ import fontsRouter from "./routes/fonts";
 import micloudRouter from "./routes/micloud";
 import oppoCloudRouter from "./routes/oppocloud";
 import mindmapsRouter from "./routes/mindmaps";
-import documentsRouter from "./routes/documents";
+
 import aiRouter from "./routes/ai";
 import diaryRouter from "./routes/diary";
 import authRouter, { JWT_SECRET } from "./routes/auth";
@@ -114,7 +114,6 @@ app.route("/api/export", exportRouter);
 app.route("/api/micloud", micloudRouter);
 app.route("/api/oppocloud", oppoCloudRouter);
 app.route("/api/mindmaps", mindmapsRouter);
-app.route("/api/documents", documentsRouter);
 app.route("/api/ai", aiRouter);
 
 app.route("/api/settings", settingsRouter);

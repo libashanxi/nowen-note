@@ -10,7 +10,7 @@ A self-hosted private knowledge base, inspired by Synology Note Station.
 
 ### 简介
 
-nowen-note 是一款自托管的私有化知识管理应用，采用现代前后端分离架构，支持 Docker 一键部署。集成 Tiptap 富文本编辑器、AI 智能写作助手（支持 6 大 AI 服务商 + 本地 Ollama）、Univer.js 浏览器端文档编辑（Word/Excel）、思维导图、任务管理中心、FTS5 全文搜索、数据导入导出等功能，打造一体化知识管理平台。
+nowen-note 是一款自托管的私有化知识管理应用，采用现代前后端分离架构，支持 Docker 一键部署。集成 Tiptap 富文本编辑器、AI 智能写作助手（支持 6 大 AI 服务商 + 本地 Ollama）、思维导图、任务管理中心、FTS5 全文搜索、数据导入导出等功能，打造一体化知识管理平台。
 
 ### 技术栈
 
@@ -25,7 +25,7 @@ nowen-note 是一款自托管的私有化知识管理应用，采用现代前后
 | 数据库   | SQLite（better-sqlite3）+ FTS5 全文搜索                      |
 | 认证     | JWT（jsonwebtoken）+ bcryptjs 密码哈希                       |
 | 数据校验 | Zod                                                          |
-| 文档编辑 | Univer.js（浏览器端 Word/Excel 编辑，无需服务端）            |
+
 | AI 引擎  | 通义千问 / OpenAI / Google Gemini / DeepSeek / 豆包 / Ollama |
 | 数据处理 | JSZip（压缩打包）、Turndown（HTML→Markdown）、FileSaver      |
 | Markdown | react-markdown + remark-gfm（AI 聊天渲染）                   |
@@ -46,7 +46,6 @@ nowen-note/
 │   │   │   ├── AISettingsPanel.tsx    # AI 服务配置（6 大 Provider 卡片）
 │   │   │   ├── TaskCenter.tsx         # 任务管理中心
 │   │   │   ├── MindMapEditor.tsx      # 思维导图编辑器
-│   │   │   ├── DocumentCenter.tsx     # 文档中心（Univer.js 集成）
 │   │   │   ├── LoginPage.tsx          # 登录页
 │   │   │   ├── ContextMenu.tsx        # 通用右键菜单组件
 │   │   │   ├── SettingsModal.tsx      # 设置中心（外观/AI/安全/数据）
@@ -74,7 +73,6 @@ nowen-note/
 │       │   ├── tags.ts        # 标签管理
 │       │   ├── tasks.ts       # 待办任务（子任务/优先级/截止日期）
 │       │   ├── mindmaps.ts    # 思维导图 CRUD
-│       │   ├── documents.ts   # 文档管理
 │       │   ├── ai.ts          # AI 聊天 + 写作助手 + RAG 知识问答
 │       │   ├── search.ts      # FTS5 全文搜索
 │       │   ├── export.ts      # 数据导入导出
@@ -161,7 +159,7 @@ docker run -d \
 
 | 端口 | 服务 | 说明 |
 |------|------|------|
-| `3001` | nowen-note | 主应用（前后端一体 + SQLite + Univer.js 文档编辑） |
+| `3001` | nowen-note | 主应用（前后端一体 + SQLite） |
 
 **环境变量说明：**
 
@@ -352,13 +350,6 @@ docker run -d \
 - **卡片式 Provider 选择**：渐变色图标、配置状态指示、自动填充 URL 和模型
 - **连接测试 & 模型列表拉取**：实时验证配置可用性
 
-#### 文档中心（Univer.js）
-- **浏览器端编辑**：基于 Univer.js 的 Word、Excel 在线编辑，无需服务端文档服务器
-- **Ctrl+S 快捷保存**：支持键盘快捷键 Ctrl+S（Mac 为 Cmd+S）保存文档和表格
-- **文档管理**：创建、上传、下载、搜索、重命名、批量删除
-- **文件格式**：Word（docx）和 Excel（xlsx）双向读写，保留文字样式和图片
-- **文件类型**：Word（蓝色）、Excel（绿色）图标区分
-
 #### 思维导图
 - 可视化脑图编辑器，自研树形布局算法
 - 节点操作：新增子节点、编辑、删除、折叠/展开
@@ -421,9 +412,9 @@ docker run -d \
 │  │           nowen-note :3001          │  │
 │  │                                     │  │
 │  │  ┌─────────────┐                    │  │
-│  │  │  Frontend   │  Univer.js         │  │
-│  │  │  React      │  Word/Excel 编辑   │  │
-│  │  │  Tiptap     │  （浏览器端）       │  │
+│  │  │  Frontend   │                    │  │
+│  │  │  React      │                    │  │
+│  │  │  Tiptap     │                    │  │
 │  │  ├─────────────┤                    │  │
 │  │  │  Backend    │                    │  │
 │  │  │  Hono       │◄──► 外部 AI API:   │  │
@@ -437,7 +428,7 @@ docker run -d \
 
 | 服务 | 镜像 | 端口 | 持久化卷 | 说明 |
 |------|------|------|---------|------|
-| nowen-note | 自构建 | 3001 | nowen-note-data | 主应用（前后端一体 + SQLite + Univer.js 文档编辑） |
+| nowen-note | 自构建 | 3001 | nowen-note-data | 主应用（前后端一体 + SQLite） |
 
 ### 数据库设计
 
@@ -462,7 +453,7 @@ docker run -d \
 
 ### Introduction
 
-nowen-note is a self-hosted private knowledge management application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring a Tiptap rich-text editor, AI-powered writing assistant (supporting 6 major AI providers + local Ollama), Univer.js browser-based Word/Excel editing (no server-side document service required), mind mapping, task management, FTS5 full-text search, data import/export, and more — an all-in-one knowledge management platform.
+nowen-note is a self-hosted private knowledge management application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, featuring a Tiptap rich-text editor, AI-powered writing assistant (supporting 6 major AI providers + local Ollama), mind mapping, task management, FTS5 full-text search, data import/export, and more — an all-in-one knowledge management platform.
 
 ### Tech Stack
 
@@ -477,7 +468,6 @@ nowen-note is a self-hosted private knowledge management application with a mode
 | Database      | SQLite (better-sqlite3) + FTS5 full-text search                              |
 | Auth          | JWT (jsonwebtoken) + bcryptjs password hashing                                |
 | Validation    | Zod                                                                           |
-| Document      | Univer.js (browser-based Word/Excel editing, Ctrl+S save)                     |
 | AI Engine     | Qwen / OpenAI / Google Gemini / DeepSeek / Doubao / Ollama                   |
 | Data Utils    | JSZip (compression), Turndown (HTML→Markdown), FileSaver                      |
 | Markdown      | react-markdown + remark-gfm (AI chat rendering)                              |
@@ -620,13 +610,6 @@ All NAS platforms with Docker support follow the same general steps:
 - **Card-style provider selection**: Gradient icons, config status indicators, auto-fill URL & model
 - **Connection test & model list fetch**: Real-time configuration validation
 
-#### Document Center (Univer.js)
-- **Browser-based editing**: Word and Excel online editing powered by Univer.js, no server-side document service required
-- **Ctrl+S quick save**: Keyboard shortcut Ctrl+S (Cmd+S on Mac) to save documents and spreadsheets
-- **Document management**: Create, upload, download, search, rename, batch delete
-- **File format support**: Word (docx) and Excel (xlsx) bi-directional read/write, preserving text styles and images
-- **File type icons**: Word (blue), Excel (green)
-
 #### Mind Mapping
 - Visual mind map editor with custom tree layout algorithm
 - Node operations: add child, edit, delete, collapse/expand
@@ -689,9 +672,9 @@ All NAS platforms with Docker support follow the same general steps:
 │  │           nowen-note :3001          │  │
 │  │                                     │  │
 │  │  ┌─────────────┐                    │  │
-│  │  │  Frontend   │  Univer.js         │  │
-│  │  │  React      │  Word/Excel edit   │  │
-│  │  │  Tiptap     │  (browser-side)    │  │
+│  │  │  Frontend   │                    │  │
+│  │  │  React      │                    │  │
+│  │  │  Tiptap     │                    │  │
 │  │  ├─────────────┤                    │  │
 │  │  │  Backend    │                    │  │
 │  │  │  Hono       │◄──► External AI:   │  │
@@ -705,4 +688,4 @@ All NAS platforms with Docker support follow the same general steps:
 
 | Service | Image | Port | Volumes | Description |
 |---------|-------|------|---------|-------------|
-| nowen-note | Self-built | 3001 | nowen-note-data | Main app (frontend + backend + SQLite + Univer.js doc editing) |
+| nowen-note | Self-built | 3001 | nowen-note-data | Main app (frontend + backend + SQLite) |

@@ -1,10 +1,9 @@
 # Stage 1: Build frontend
 FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 COPY frontend/ .
-ENV NODE_OPTIONS="--max-old-space-size=1536"
 RUN npx vite build
 
 # Stage 2: Build backend
@@ -12,8 +11,8 @@ FROM node:20-alpine AS backend-build
 WORKDIR /app/backend
 # 安装原生模块编译工具链（better-sqlite3 需要）
 RUN apk add --no-cache python3 make g++
-COPY backend/package*.json ./
-RUN npm install
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci
 COPY backend/ .
 RUN npx tsc
 
@@ -22,9 +21,9 @@ FROM node:20-alpine
 WORKDIR /app
 
 # 安装原生模块编译工具链，安装依赖后清理
-COPY backend/package*.json ./backend/
+COPY backend/package.json backend/package-lock.json ./backend/
 RUN apk add --no-cache python3 make g++ \
-    && cd backend && npm install --omit=dev \
+    && cd backend && npm ci --omit=dev \
     && apk del python3 make g++ \
     && rm -rf /root/.npm /tmp/*
 

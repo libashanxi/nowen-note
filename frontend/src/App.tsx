@@ -7,7 +7,6 @@ import NoteList from "@/components/NoteList";
 import EditorPane from "@/components/EditorPane";
 import TaskCenter from "@/components/TaskCenter";
 import MindMapCenter from "@/components/MindMapEditor";
-import DocumentCenter from "@/components/DocumentCenter";
 import AIChatPanel from "@/components/AIChatPanel";
 import DiaryCenter from "@/components/DiaryCenter";
 import LoginPage from "@/components/LoginPage";
@@ -113,7 +112,6 @@ function AppLayout() {
   const actions = useAppActions();
   const isTaskView = state.viewMode === "tasks";
   const isMindMapView = state.viewMode === "mindmaps";
-  const isDocumentView = state.viewMode === "documents";
   const isAIChatView = state.viewMode === "ai-chat";
   const isDiaryView = state.viewMode === "diary";
 
@@ -163,10 +161,6 @@ function AppLayout() {
         <div className="flex-1 flex flex-col">
           <MobileTopBar />
           <MindMapCenter />
-        </div>
-      ) : isDocumentView ? (
-        <div className="flex-1 flex flex-col">
-          <DocumentCenter />
         </div>
       ) : isAIChatView ? (
         <div className="flex-1 flex flex-col">

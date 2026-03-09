@@ -35,7 +35,6 @@ export default defineConfig({
             '@tiptap/extension-task-list',
             '@tiptap/extension-underline',
           ],
-          'vendor-univer': ['@univerjs/presets'],
           'vendor-ui': [
             'framer-motion',
             'lucide-react',
@@ -43,7 +42,6 @@ export default defineConfig({
           ],
           'vendor-utils': [
             'jszip',
-            'xlsx',
             'react-markdown',
             'remark-gfm',
             'turndown',

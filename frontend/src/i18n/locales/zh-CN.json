@@ -37,7 +37,6 @@
     "allNotes": "所有笔记",
     "tasks": "待办事项",
     "mindMaps": "思维导图",
-    "documents": "文档中心",
     "aiChat": "AI 问答",
 
     "favorites": "收藏",
@@ -361,30 +360,6 @@
     "downloadPNG": "下载为 PNG",
     "downloadSVG": "下载为 SVG",
     "downloadXmind": "下载为 .xmind"
-  },
-  "documents": {
-    "title": "文档中心",
-    "totalCount": "共 {{count}} 个文档",
-    "create": "新建",
-    "upload": "上传文档",
-    "download": "下载",
-    "searchPlaceholder": "搜索文档...",
-    "filterAll": "全部",
-    "type_word": "Word",
-    "type_cell": "Excel",
-    "batchManage": "批量管理",
-    "deleteSelected": "删除 ({{count}})",
-    "deselectAll": "取消全选",
-    "selectAll": "全选",
-    "empty": "暂无文档",
-    "createFirst": "点击「新建」创建 Word 或 Excel",
-    "loadingDocument": "正在加载文档...",
-    "loadFailed": "文档加载失败",
-    "backToList": "返回列表",
-    "preview": "预览",
-    "editing": "编辑中",
-    "addRow": "行",
-    "addCol": "列"
   },
   "ai": {
     "title": "AI 智能配置",
