@@ -27,9 +27,10 @@ const app = new Hono();
 
 app.use("*", logger());
 app.use("*", cors({
-  origin: ["http://localhost:5173", "http://localhost:3000"],
-  allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+  origin: (origin) => origin || "*",
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowHeaders: ["Content-Type", "X-User-Id", "Authorization"],
+  credentials: true,
 }));
 
 // 初始化数据库

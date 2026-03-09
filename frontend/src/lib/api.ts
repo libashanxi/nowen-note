@@ -1,6 +1,25 @@
 import { Notebook, Note, NoteListItem, Tag, SearchResult, User, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem } from "@/types";
 
-const BASE_URL = "/api";
+// 服务器地址管理
+const SERVER_URL_KEY = "nowen-server-url";
+
+export function getServerUrl(): string {
+  return localStorage.getItem(SERVER_URL_KEY) || "";
+}
+
+export function setServerUrl(url: string) {
+  const normalized = url.replace(/\/+$/, "");
+  localStorage.setItem(SERVER_URL_KEY, normalized);
+}
+
+export function clearServerUrl() {
+  localStorage.removeItem(SERVER_URL_KEY);
+}
+
+function getBaseUrl(): string {
+  const server = getServerUrl();
+  return server ? `${server}/api` : "/api";
+}
 
 function getToken(): string | null {
   return localStorage.getItem("nowen-token");
@@ -8,7 +27,7 @@ function getToken(): string | null {
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${BASE_URL}${url}`, {
+  const res = await fetch(`${getBaseUrl()}${url}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -32,7 +51,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 export const api = {
   // Public (no auth required)
   getSiteSettingsPublic: async (): Promise<{ site_title: string; site_favicon: string; editor_font_family: string }> => {
-    const res = await fetch(`${BASE_URL}/settings`);
+    const res = await fetch(`${getBaseUrl()}/settings`);
     if (!res.ok) return { site_title: "nowen-note", site_favicon: "", editor_font_family: "" };
     return res.json();
   },
@@ -107,7 +126,7 @@ export const api = {
   // Fonts
   getFonts: () => request<CustomFont[]>("/fonts"),
   getFontsPublic: async (): Promise<CustomFont[]> => {
-    const res = await fetch(`${BASE_URL}/fonts`);
+    const res = await fetch(`${getBaseUrl()}/fonts`);
     if (!res.ok) return [];
     return res.json();
   },
@@ -117,7 +136,7 @@ export const api = {
     for (const file of Array.from(files)) {
       form.append("files", file);
     }
-    const res = await fetch(`${BASE_URL}/fonts/upload`, {
+    const res = await fetch(`${getBaseUrl()}/fonts/upload`, {
       method: "POST",
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: form,
@@ -129,7 +148,7 @@ export const api = {
     return res.json();
   },
   deleteFont: (id: string) => request(`/fonts/${id}`, { method: "DELETE" }),
-  getFontFileUrl: (id: string) => `${BASE_URL}/fonts/file/${id}`,
+  getFontFileUrl: (id: string) => `${getBaseUrl()}/fonts/file/${id}`,
 
   // Mi Cloud
   miCloudVerify: (cookie: string) =>
@@ -178,7 +197,7 @@ export const api = {
     request<{ models: { id: string; name: string }[] }>("/ai/models"),
   aiChat: async (action: string, text: string, context?: string, onChunk?: (chunk: string) => void): Promise<string> => {
     const token = getToken();
-    const res = await fetch(`${BASE_URL}/ai/chat`, {
+    const res = await fetch(`${getBaseUrl()}/ai/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -220,7 +239,7 @@ export const api = {
     onReferences?: (refs: { id: string; title: string }[]) => void
   ): Promise<string> => {
     const token = getToken();
-    const res = await fetch(`${BASE_URL}/ai/ask`, {
+    const res = await fetch(`${getBaseUrl()}/ai/ask`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -268,3 +287,21 @@ export const api = {
   },
 
 };
+
+// 测试服务器连接（不需要 token）
+export async function testServerConnection(serverUrl: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const url = `${serverUrl.replace(/\/+$/, "")}/api/health`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    if (data.status === "ok") return { ok: true };
+    return { ok: false, error: "Invalid response" };
+  } catch (e: any) {
+    if (e.name === "AbortError") return { ok: false, error: "连接超时" };
+    return { ok: false, error: e.message || "连接失败" };
+  }
+}

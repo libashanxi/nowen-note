@@ -16,6 +16,9 @@
     "build:all": "npm run build:backend && npm run build:frontend"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^7.6.0",
+    "@capacitor/core": "^8.2.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8"
   }

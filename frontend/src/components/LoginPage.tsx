@@ -1,13 +1,16 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Lock, User, BookOpen } from "lucide-react";
+import { Loader2, Lock, User, BookOpen, Server, Unplug } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { getServerUrl } from "@/lib/api";
 
 interface LoginPageProps {
   onLogin: (token: string, user: any) => void;
+  serverUrl?: string;
+  onDisconnect?: () => void;
 }
 
-export default function LoginPage({ onLogin }: LoginPageProps) {
+export default function LoginPage({ onLogin, serverUrl, onDisconnect }: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,7 +23,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const base = getServerUrl();
+      const loginUrl = base ? `${base}/api/auth/login` : "/api/auth/login";
+      const res = await fetch(loginUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -150,6 +155,25 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           <p className="text-center text-xs text-zinc-400 dark:text-zinc-600 mt-6">
             {t('auth.defaultCredentials')}
           </p>
+
+          {/* 服务器地址显示 */}
+          {serverUrl && onDisconnect && (
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20">
+                <Server size={12} className="text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs text-emerald-700 dark:text-emerald-300 max-w-[200px] truncate">{serverUrl}</span>
+              </div>
+              <button
+                type="button"
+                onClick={onDisconnect}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-zinc-500 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                title={t('server.disconnect')}
+              >
+                <Unplug size={12} />
+                {t('server.disconnect')}
+              </button>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

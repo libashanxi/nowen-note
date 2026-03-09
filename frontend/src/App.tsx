@@ -10,11 +10,13 @@ import MindMapCenter from "@/components/MindMapEditor";
 import AIChatPanel from "@/components/AIChatPanel";
 import DiaryCenter from "@/components/DiaryCenter";
 import LoginPage from "@/components/LoginPage";
+import ServerConnect from "@/components/ServerConnect";
 import { AppProvider, useApp, useAppActions, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH, MIN_NOTELIST_WIDTH, MAX_NOTELIST_WIDTH, DEFAULT_NOTELIST_WIDTH } from "@/store/AppContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { SiteSettingsProvider, useSiteSettings } from "@/hooks/useSiteSettings";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { User } from "@/types";
+import { getServerUrl, clearServerUrl } from "@/lib/api";
 
 function SidebarResizeHandle() {
   const { state } = useApp();
@@ -215,17 +217,20 @@ function MobileTopBar() {
 function AuthGate() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [needServer, setNeedServer] = useState(false);
   const { t } = useTranslation();
 
-  useEffect(() => {
+  const checkAuth = useCallback(() => {
     const token = localStorage.getItem("nowen-token");
     if (!token) {
       setIsAuthenticated(false);
       return;
     }
 
-    // 验证 token 有效性
-    fetch("/api/auth/verify", {
+    const serverUrl = getServerUrl();
+    const baseUrl = serverUrl ? `${serverUrl}/api` : "/api";
+
+    fetch(`${baseUrl}/auth/verify`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {
@@ -241,6 +246,35 @@ function AuthGate() {
         setIsAuthenticated(false);
       });
   }, []);
+
+  useEffect(() => {
+    // 判断是否需要服务器地址配置：
+    // 如果是 capacitor / file:// 协议 / 已保存了服务器地址，则需要检测
+    const isClientMode = window.location.protocol === "file:" 
+      || window.location.protocol === "capacitor:"
+      || !!getServerUrl();
+    
+    if (isClientMode && !getServerUrl()) {
+      setNeedServer(true);
+      setIsAuthenticated(false);
+      return;
+    }
+
+    checkAuth();
+  }, [checkAuth]);
+
+  const handleServerConnected = () => {
+    setNeedServer(false);
+    checkAuth();
+  };
+
+  const handleDisconnect = () => {
+    clearServerUrl();
+    localStorage.removeItem("nowen-token");
+    setNeedServer(true);
+    setIsAuthenticated(false);
+    setUser(null);
+  };
 
   const handleLogin = (token: string, userData: User) => {
     setUser(userData);
@@ -259,9 +293,14 @@ function AuthGate() {
     );
   }
 
+  // 需要配置服务器地址
+  if (needServer) {
+    return <ServerConnect onConnected={handleServerConnected} />;
+  }
+
   // 未登录
   if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <LoginPage onLogin={handleLogin} serverUrl={getServerUrl()} onDisconnect={getServerUrl() ? handleDisconnect : undefined} />;
   }
 
   // 已登录

@@ -414,5 +414,16 @@
     "clearChat": "Clear Chat",
     "you": "You",
     "ai": "AI"
+  },
+  "server": {
+    "title": "Connect to Server",
+    "subtitle": "Enter your Nowen Note server address to get started",
+    "addressLabel": "Server Address",
+    "addressPlaceholder": "e.g. 192.168.1.100:3001 or note.example.com",
+    "addressHint": "Enter IP:port or domain, http:// is added automatically",
+    "connectButton": "Connect",
+    "connectFailed": "Cannot connect to server",
+    "disconnect": "Disconnect",
+    "note": "Make sure the server is running and reachable from this device"
   }
 }

@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync android",
+    "cap:build": "npm run build && npx cap sync android",
+    "cap:open": "npx cap open android"
   },
   "dependencies": {
     "@tiptap/extension-code-block-lowlight": "^3.19.0",
