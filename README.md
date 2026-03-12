@@ -47,7 +47,7 @@ nowen-note/
 │   │   │   ├── AISettingsPanel.tsx    # AI 服务配置（6 大 Provider 卡片）
 │   │   │   ├── TaskCenter.tsx         # 任务管理中心
 │   │   │   ├── MindMapEditor.tsx      # 思维导图编辑器
-│   │   │   ├── DiaryCenter.tsx        # 日记中心（开发中）
+│   │   │   ├── DiaryCenter.tsx        # 说说/动态（微博风格时间线）
 │   │   │   ├── LoginPage.tsx          # 登录页
 │   │   │   ├── ServerConnect.tsx      # 服务器连接配置（客户端模式）
 │   │   │   ├── ContextMenu.tsx        # 通用右键菜单组件
@@ -83,6 +83,7 @@ nowen-note/
 │       │   ├── tags.ts        # 标签管理
 │       │   ├── tasks.ts       # 待办任务（子任务/优先级/截止日期）
 │       │   ├── mindmaps.ts    # 思维导图 CRUD
+│       │   ├── diary.ts       # 说说/动态（时间线 + 发布/删除/统计）
 │       │   ├── ai.ts          # AI 聊天 + 写作助手 + RAG 知识问答
 │       │   ├── search.ts      # FTS5 全文搜索
 │       │   ├── export.ts      # 数据导入导出
@@ -367,13 +368,15 @@ npx cap open android
 - **笔记移动**：右键菜单"移动到..."弹窗（树形笔记本选择器）、编辑器顶栏快速切换笔记本
 - **字数统计**：实时显示词数和字符数（中文按字计数，英文按空格分词）
 - **笔记大纲**：自动提取 H1-H3 标题生成大纲面板，点击标题跳转定位
+- **日历筛选**：笔记列表标题栏日历按钮，选择日期后按更新时间筛选笔记
 - **乐观锁**：version 字段防止编辑冲突
 - **快捷键**：`Alt+N` 快速新建笔记
 
 #### 笔记本
 - 支持无限层级嵌套（树形结构）
-- 右键菜单：新建笔记、新建子笔记本、重命名、删除
+- 右键菜单：新建笔记、新建子笔记本、更换图标、重命名、删除
 - 行内重命名：原地 `<input>` 编辑，Enter 保存、Escape 取消
+- **自定义图标**：点击笔记本图标或右键「更换图标」弹出 Emoji 选择器（5 分类：物品/表情/科技/自然/食物）
 
 #### AI 智能助手
 - **AI 写作助手**：选中文本后触发，支持 10 种操作
@@ -417,6 +420,13 @@ npx cap open android
 - **子任务**：父子关系任务拆分
 - **多维筛选**：全部 / 今天 / 本周 / 逾期 / 已完成
 - **任务统计**：完成率、逾期数等摘要
+
+#### 说说/动态
+- **微博风格时间线**：一句话快速发布，轻量便捷
+- **发布框**：文字输入 + 心情选择（12 种）+ `Ctrl+Enter` 快捷发布
+- **动态卡片**：内容 + 心情 emoji + 相对时间显示 + 删除（二次确认）
+- **时间线分组**：按日期自动分组（今天/昨天/具体日期），游标分页加载更多
+- **统计概览**：总动态数 + 今日发布数
 
 #### 全文搜索
 - 基于 SQLite FTS5 虚拟表
@@ -507,7 +517,7 @@ npx cap open android
 
 ### 数据库设计
 
-9 张数据表 + 1 张 FTS5 全文搜索虚拟表：
+10 张数据表 + 1 张 FTS5 全文搜索虚拟表：
 
 | 表名 | 说明 |
 |------|------|
@@ -518,6 +528,7 @@ npx cap open android
 | `note_tags` | 笔记-标签多对多关联 |
 | `attachments` | 附件 |
 | `tasks` | 待办任务（支持子任务 parentId + 优先级 + 截止日期） |
+| `diaries` | 说说/动态（内容 + 心情 + 时间戳） |
 | `system_settings` | 系统设置键值对（含 AI 配置） |
 | `custom_fonts` | 自定义字体 |
 | `notes_fts` | FTS5 全文搜索虚拟表（通过触发器自动同步） |
@@ -536,6 +547,7 @@ npx cap open android
 | `/api/search` | ✓ | FTS5 全文搜索 |
 | `/api/tasks` | ✓ | 待办任务 |
 | `/api/mindmaps` | ✓ | 思维导图 CRUD |
+| `/api/diary` | ✓ | 说说/动态（发布/时间线/删除/统计） |
 | `/api/ai` | ✓ | AI 聊天 + 写作助手 + RAG |
 | `/api/export` | ✓ | 数据导入导出 |
 | `/api/settings` | ✓ | 站点配置（写操作） |
@@ -551,7 +563,7 @@ npx cap open android
 
 ### Introduction
 
-nowen-note is a self-hosted private knowledge management application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, Electron desktop client, and Android mobile app (Capacitor). Featuring a Tiptap rich-text editor, AI-powered writing assistant (supporting 6 major AI providers + local Ollama), mind mapping, task management, FTS5 full-text search, multi-platform data import (Xiaomi / OPPO / iCloud), data export, and more — an all-in-one knowledge management platform.
+nowen-note is a self-hosted private knowledge management application with a modern frontend-backend separated architecture. It supports one-click Docker deployment, Electron desktop client, and Android mobile app (Capacitor). Featuring a Tiptap rich-text editor, AI-powered writing assistant (supporting 6 major AI providers + local Ollama), mind mapping, task management, moments/status updates, FTS5 full-text search, calendar filtering, multi-platform data import (Xiaomi / OPPO / iCloud), data export, and more — an all-in-one knowledge management platform.
 
 ### Tech Stack
 
@@ -708,13 +720,15 @@ All NAS platforms with Docker support follow the same general steps:
 - **Move notes**: Right-click "Move to..." modal (tree notebook selector) + quick notebook switch in editor header
 - **Word count**: Real-time word and character count (CJK characters counted individually, English by whitespace)
 - **Note outline**: Auto-extract H1-H3 headings into outline panel with click-to-scroll navigation
+- **Calendar filter**: Calendar button in note list header, filter notes by update date
 - **Optimistic locking**: Version field to prevent edit conflicts
 - **Keyboard shortcut**: `Alt+N` for quick note creation
 
 #### Notebooks
 - Unlimited nested hierarchy (tree structure)
-- Context menu: New note, new sub-notebook, rename, delete
+- Context menu: New note, new sub-notebook, change icon, rename, delete
 - Inline rename: In-place `<input>` editing, Enter to save, Escape to cancel
+- **Custom icons**: Click notebook icon or right-click "Change Icon" to open Emoji picker (5 categories: Objects/Smileys/Tech/Nature/Food)
 
 #### AI Smart Assistant
 - **AI Writing Assistant**: Triggered on text selection, 10 operations
@@ -758,6 +772,13 @@ All NAS platforms with Docker support follow the same general steps:
 - **Subtasks**: Parent-child task breakdown
 - **Multi-filter**: All / Today / This Week / Overdue / Completed
 - **Task statistics**: Completion rate, overdue count summary
+
+#### Moments / Status Updates
+- **Weibo-style timeline**: Quick one-liner posting, lightweight and fast
+- **Compose box**: Text input + mood selection (12 moods) + `Ctrl+Enter` quick post
+- **Moment cards**: Content + mood emoji + relative time display + delete (with confirmation)
+- **Timeline grouping**: Auto-grouped by date (today/yesterday/specific date), cursor-based pagination
+- **Stats overview**: Total moments count + today's post count
 
 #### Full-text Search
 - Based on SQLite FTS5 virtual tables
@@ -860,6 +881,7 @@ All NAS platforms with Docker support follow the same general steps:
 | `/api/search` | ✓ | FTS5 full-text search |
 | `/api/tasks` | ✓ | Task management |
 | `/api/mindmaps` | ✓ | Mind map CRUD |
+| `/api/diary` | ✓ | Moments (post/timeline/delete/stats) |
 | `/api/ai` | ✓ | AI chat + writing assistant + RAG |
 | `/api/export` | ✓ | Data import/export |
 | `/api/settings` | ✓ | Site configuration (write) |
