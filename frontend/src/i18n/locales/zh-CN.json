@@ -52,7 +52,13 @@
     "logout": "退出登录",
     "deleteNotebookTitle": "删除笔记本",
     "deleteNotebookConfirm": "确定要删除「{{name}}」吗？该笔记本下的所有笔记也将被删除，此操作不可撤销。",
-    "confirmDelete": "确认删除"
+    "confirmDelete": "确认删除",
+    "changeIcon": "更换图标",
+    "emojiObjects": "物品",
+    "emojiSmileys": "表情",
+    "emojiTech": "科技",
+    "emojiNature": "自然",
+    "emojiFood": "食物"
   },
   "noteList": {
     "moveTo": "移动到...",
@@ -72,7 +78,19 @@
     "notebook": "笔记本",
     "search": "搜索: {{query}}",
     "tag": "标签",
-    "note": "笔记"
+    "note": "笔记",
+    "dateFilter": "日期筛选",
+    "filterDate": "筛选日期",
+    "clearFilter": "清除",
+    "calendarYear": "年",
+    "calendarMonth": "月",
+    "weekSun": "日",
+    "weekMon": "一",
+    "weekTue": "二",
+    "weekWed": "三",
+    "weekThu": "四",
+    "weekFri": "五",
+    "weekSat": "六"
   },
   "editor": {
     "selectNote": "选择一条笔记开始编辑",

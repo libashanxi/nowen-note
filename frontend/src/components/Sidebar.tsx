@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Plus, Star, Trash2, Search, ChevronRight,
   ChevronDown, Hash, PanelLeftClose, PanelLeft, ListTodo,
   Settings, LogOut, FilePlus, FolderPlus, Edit2, X, BrainCircuit,
-  FileSpreadsheet, Bot, CalendarDays
+  FileSpreadsheet, Bot, CalendarDays, Smile
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,145 @@ import { api } from "@/lib/api";
 import { Notebook, ViewMode } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+
+/* ===== Emoji 图标选择器 ===== */
+const EMOJI_GROUPS = [
+  {
+    label: "objects",
+    emojis: [
+      "📒", "📓", "📔", "📕", "📗", "📘", "📙", "📚", "📖",
+      "📝", "📄", "📋", "📁", "📂", "🗂️", "🗃️", "🗄️",
+      "💼", "🎒", "👜", "📦", "🗑️", "📌", "📎", "🔗",
+      "✂️", "🔍", "🔐", "🔑", "🛠️", "⚙️", "🧲", "🧪",
+    ],
+  },
+  {
+    label: "smileys",
+    emojis: [
+      "😊", "😎", "🤓", "🧐", "🤔", "💡", "⭐", "🌟",
+      "❤️", "🔥", "✨", "🎯", "🎨", "🎵", "🎮", "🏆",
+      "🚀", "💎", "🌈", "☀️", "🌙", "⚡", "💫", "🍀",
+    ],
+  },
+  {
+    label: "tech",
+    emojis: [
+      "💻", "🖥️", "⌨️", "🖱️", "🖨️", "📱", "📡", "🔌",
+      "🧑‍💻", "⚛️", "🐍", "🦀", "☕", "🐳", "🐙", "🤖",
+    ],
+  },
+  {
+    label: "nature",
+    emojis: [
+      "🌸", "🌺", "🌻", "🌹", "🌿", "🍃", "🌲", "🌴",
+      "🦋", "🐱", "🐶", "🦊", "🐼", "🐨", "🐸", "🦉",
+    ],
+  },
+  {
+    label: "food",
+    emojis: [
+      "🍎", "🍊", "🍋", "🍇", "🍓", "🍒", "🍰", "🍩",
+      "☕", "🍵", "🧃", "🍺", "🧁", "🍕", "🌮", "🍣",
+    ],
+  },
+];
+
+function EmojiIconPicker({
+  currentIcon,
+  onSelect,
+  onClose,
+  position,
+}: {
+  currentIcon: string;
+  onSelect: (emoji: string) => void;
+  onClose: () => void;
+  position: { top: number; left: number };
+}) {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLDivElement>(null);
+  const [activeGroup, setActiveGroup] = useState(0);
+
+  // 点击外部关闭
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  // 确保弹窗不溢出视口
+  const [adjustedPos, setAdjustedPos] = useState(position);
+  useEffect(() => {
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      let { top, left } = position;
+      if (top + rect.height > window.innerHeight - 8) top = window.innerHeight - rect.height - 8;
+      if (left + rect.width > window.innerWidth - 8) left = window.innerWidth - rect.width - 8;
+      if (top < 8) top = 8;
+      if (left < 8) left = 8;
+      setAdjustedPos({ top, left });
+    }
+  }, [position]);
+
+  const groupLabels: Record<string, string> = {
+    objects: t("sidebar.emojiObjects"),
+    smileys: t("sidebar.emojiSmileys"),
+    tech: t("sidebar.emojiTech"),
+    nature: t("sidebar.emojiNature"),
+    food: t("sidebar.emojiFood"),
+  };
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, scale: 0.92 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.92 }}
+      transition={{ duration: 0.15 }}
+      className="fixed z-[70] w-[260px] bg-app-elevated rounded-xl border border-app-border shadow-2xl"
+      style={{ top: adjustedPos.top, left: adjustedPos.left }}
+    >
+      {/* 分组标签 */}
+      <div className="flex items-center gap-0.5 px-2 pt-2 pb-1 border-b border-app-border/50">
+        {EMOJI_GROUPS.map((g, idx) => (
+          <button
+            key={g.label}
+            onClick={() => setActiveGroup(idx)}
+            className={cn(
+              "px-2 py-1 rounded-md text-[10px] font-medium transition-colors",
+              activeGroup === idx
+                ? "bg-accent-primary/10 text-accent-primary"
+                : "text-tx-tertiary hover:text-tx-secondary hover:bg-app-hover"
+            )}
+          >
+            {groupLabels[g.label] || g.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Emoji 网格 */}
+      <div className="p-2 max-h-[200px] overflow-y-auto">
+        <div className="grid grid-cols-8 gap-0.5">
+          {EMOJI_GROUPS[activeGroup].emojis.map((emoji) => (
+            <button
+              key={emoji}
+              onClick={() => { onSelect(emoji); onClose(); }}
+              className={cn(
+                "w-7 h-7 rounded-md flex items-center justify-center text-base transition-all",
+                currentIcon === emoji
+                  ? "bg-accent-primary/15 ring-1 ring-accent-primary/30 scale-110"
+                  : "hover:bg-app-hover hover:scale-110"
+              )}
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 function buildTree(notebooks: Notebook[]): Notebook[] {
   const map = new Map<string, Notebook>();
@@ -37,18 +176,23 @@ function buildTree(notebooks: Notebook[]): Notebook[] {
 function NotebookItem({
   notebook, depth, onSelect, selectedId, onToggle, onContextMenu,
   editingId, editValue, onEditChange, onEditSubmit, onEditCancel,
+  onIconChange,
 }: {
   notebook: Notebook; depth: number; onSelect: (id: string) => void;
   selectedId: string | null; onToggle: (id: string) => void;
   onContextMenu: (e: React.MouseEvent, id: string) => void;
   editingId: string | null; editValue: string;
   onEditChange: (v: string) => void; onEditSubmit: () => void; onEditCancel: () => void;
+  onIconChange: (id: string, emoji: string) => void;
 }) {
+  const { t } = useTranslation();
   const isSelected = selectedId === notebook.id;
   const hasChildren = notebook.children && notebook.children.length > 0;
   const isExpanded = notebook.isExpanded === 1;
   const isEditing = editingId === notebook.id;
   const inputRef = useRef<HTMLInputElement>(null);
+  const iconRef = useRef<HTMLButtonElement>(null);
+  const [showIconPicker, setShowIconPicker] = useState(false);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -56,6 +200,14 @@ function NotebookItem({
       inputRef.current.select();
     }
   }, [isEditing]);
+
+  const getIconPickerPos = () => {
+    if (iconRef.current) {
+      const r = iconRef.current.getBoundingClientRect();
+      return { top: r.bottom + 4, left: r.left };
+    }
+    return { top: 100, left: 100 };
+  };
 
   return (
     <>
@@ -80,7 +232,24 @@ function NotebookItem({
         ) : (
           <span className="w-5" />
         )}
-        <span className="text-base">{notebook.icon}</span>
+        <button
+          ref={iconRef}
+          onClick={(e) => { e.stopPropagation(); setShowIconPicker(true); }}
+          className="text-base hover:scale-125 transition-transform shrink-0"
+          title={t("sidebar.changeIcon")}
+        >
+          {notebook.icon}
+        </button>
+        <AnimatePresence>
+          {showIconPicker && (
+            <EmojiIconPicker
+              currentIcon={notebook.icon}
+              onSelect={(emoji) => onIconChange(notebook.id, emoji)}
+              onClose={() => setShowIconPicker(false)}
+              position={getIconPickerPos()}
+            />
+          )}
+        </AnimatePresence>
         {isEditing ? (
           <input
             ref={inputRef}
@@ -125,6 +294,7 @@ function NotebookItem({
                 onEditChange={onEditChange}
                 onEditSubmit={onEditSubmit}
                 onEditCancel={onEditCancel}
+                onIconChange={onIconChange}
               />
             ))}
           </motion.div>
@@ -149,6 +319,7 @@ export default function Sidebar() {
     { id: "new_note", label: t('sidebar.newNote'), icon: <FilePlus size={14} /> },
     { id: "new_sub", label: t('sidebar.newSubNotebook'), icon: <FolderPlus size={14} /> },
     { id: "sep1", label: "", separator: true },
+    { id: "change_icon", label: t('sidebar.changeIcon'), icon: <Smile size={14} /> },
     { id: "rename", label: t('common.rename'), icon: <Edit2 size={14} /> },
     { id: "sep2", label: "", separator: true },
     { id: "delete", label: t('sidebar.deleteNotebook'), icon: <Trash2 size={14} />, danger: true },
@@ -161,6 +332,9 @@ export default function Sidebar() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
+  // 更换图标状态
+  const [iconPickerId, setIconPickerId] = useState<string | null>(null);
+
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<Notebook | null>(null);
 
@@ -170,6 +344,14 @@ export default function Sidebar() {
     api.getNotebooks().then(actions.setNotebooks).catch(console.error);
     api.getTags().then(actions.setTags).catch(console.error);
   }, []);
+
+  // 更换笔记本图标
+  const handleIconChange = useCallback(async (id: string, emoji: string) => {
+    await api.updateNotebook(id, { icon: emoji }).catch(console.error);
+    actions.setNotebooks(
+      state.notebooks.map((nb) => nb.id === id ? { ...nb, icon: emoji } : nb)
+    );
+  }, [state.notebooks, actions]);
 
   const handleNotebookSelect = (id: string) => {
     actions.setSelectedNotebook(id);
@@ -231,6 +413,10 @@ export default function Sidebar() {
           setEditingId(targetId);
           setEditValue(targetNb.name);
         }
+        break;
+      }
+      case "change_icon": {
+        setIconPickerId(targetId);
         break;
       }
       case "delete": {
@@ -385,6 +571,7 @@ export default function Sidebar() {
               onEditChange={setEditValue}
               onEditSubmit={handleEditSubmit}
               onEditCancel={handleEditCancel}
+              onIconChange={handleIconChange}
             />
           ))}
         </div>
@@ -510,6 +697,18 @@ export default function Sidebar() {
         onAction={handleMenuAction}
         header={state.notebooks.find((nb) => nb.id === menu.targetId)?.name}
       />
+
+      {/* 右键菜单触发的图标选择器 */}
+      <AnimatePresence>
+        {iconPickerId && (
+          <EmojiIconPicker
+            currentIcon={state.notebooks.find((nb) => nb.id === iconPickerId)?.icon || "📒"}
+            onSelect={(emoji) => handleIconChange(iconPickerId, emoji)}
+            onClose={() => setIconPickerId(null)}
+            position={{ top: menu.y, left: menu.x }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Delete Confirmation */}
       <AnimatePresence>

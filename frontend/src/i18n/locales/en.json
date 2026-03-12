@@ -52,7 +52,13 @@
     "logout": "Logout",
     "deleteNotebookTitle": "Delete Notebook",
     "deleteNotebookConfirm": "Are you sure you want to delete \"{{name}}\"? All notes in this notebook will also be deleted. This action cannot be undone.",
-    "confirmDelete": "Confirm Delete"
+    "confirmDelete": "Confirm Delete",
+    "changeIcon": "Change Icon",
+    "emojiObjects": "Objects",
+    "emojiSmileys": "Smileys",
+    "emojiTech": "Tech",
+    "emojiNature": "Nature",
+    "emojiFood": "Food"
   },
   "noteList": {
     "moveTo": "Move to...",
@@ -72,7 +78,19 @@
     "notebook": "Notebook",
     "search": "Search: {{query}}",
     "tag": "Tag",
-    "note": "Note"
+    "note": "Note",
+    "dateFilter": "Date Filter",
+    "filterDate": "Filtered",
+    "clearFilter": "Clear",
+    "calendarYear": "/",
+    "calendarMonth": "",
+    "weekSun": "Su",
+    "weekMon": "Mo",
+    "weekTue": "Tu",
+    "weekWed": "We",
+    "weekThu": "Th",
+    "weekFri": "Fr",
+    "weekSat": "Sa"
   },
   "editor": {
     "selectNote": "Select a note to start editing",

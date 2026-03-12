@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, Folder, X, Check, Lock, Unlock } from "lucide-react";
+import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
@@ -175,6 +175,144 @@ function MoveNoteModal({
   );
 }
 
+/* ===== 迷你日历筛选器 ===== */
+function MiniCalendarFilter({
+  selectedDate,
+  onSelect,
+  onClear,
+}: {
+  selectedDate: string | null; // YYYY-MM-DD
+  onSelect: (date: string) => void;
+  onClear: () => void;
+}) {
+  const { t } = useTranslation();
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-based
+
+  const weekDays = [
+    t("noteList.weekSun"),
+    t("noteList.weekMon"),
+    t("noteList.weekTue"),
+    t("noteList.weekWed"),
+    t("noteList.weekThu"),
+    t("noteList.weekFri"),
+    t("noteList.weekSat"),
+  ];
+
+  // 构建日历格子
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const prevMonthDays = new Date(viewYear, viewMonth, 0).getDate();
+
+  const cells: { day: number; current: boolean; dateStr: string }[] = [];
+
+  // 上月补齐
+  for (let i = firstDay - 1; i >= 0; i--) {
+    const d = prevMonthDays - i;
+    const m = viewMonth === 0 ? 12 : viewMonth;
+    const y = viewMonth === 0 ? viewYear - 1 : viewYear;
+    cells.push({ day: d, current: false, dateStr: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` });
+  }
+  // 当月
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({
+      day: d,
+      current: true,
+      dateStr: `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+    });
+  }
+  // 下月补齐到 42 或至少填满最后一行
+  const remaining = 7 - (cells.length % 7);
+  if (remaining < 7) {
+    for (let d = 1; d <= remaining; d++) {
+      const m = viewMonth === 11 ? 1 : viewMonth + 2;
+      const y = viewMonth === 11 ? viewYear + 1 : viewYear;
+      cells.push({ day: d, current: false, dateStr: `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` });
+    }
+  }
+
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear(viewYear - 1); setViewMonth(11); }
+    else setViewMonth(viewMonth - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear(viewYear + 1); setViewMonth(0); }
+    else setViewMonth(viewMonth + 1);
+  };
+  const goToday = () => {
+    setViewYear(today.getFullYear());
+    setViewMonth(today.getMonth());
+  };
+
+  return (
+    <div className="px-3 py-2 select-none">
+      {/* 月份导航 */}
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={prevMonth} className="p-1 rounded-md hover:bg-app-hover text-tx-tertiary">
+          <ChevronLeft size={14} />
+        </button>
+        <button onClick={goToday} className="text-xs font-medium text-tx-secondary hover:text-tx-primary transition-colors">
+          {viewYear}{t("noteList.calendarYear")}{viewMonth + 1}{t("noteList.calendarMonth")}
+        </button>
+        <button onClick={nextMonth} className="p-1 rounded-md hover:bg-app-hover text-tx-tertiary">
+          <ChevronRight size={14} />
+        </button>
+      </div>
+
+      {/* 星期头 */}
+      <div className="grid grid-cols-7 mb-1">
+        {weekDays.map((wd) => (
+          <div key={wd} className="text-center text-[10px] text-tx-tertiary py-0.5">{wd}</div>
+        ))}
+      </div>
+
+      {/* 日期格子 */}
+      <div className="grid grid-cols-7">
+        {cells.map(({ day, current, dateStr }, idx) => {
+          const isToday = dateStr === todayStr;
+          const isSelected = dateStr === selectedDate;
+          return (
+            <button
+              key={idx}
+              onClick={() => {
+                if (isSelected) onClear();
+                else onSelect(dateStr);
+              }}
+              className={cn(
+                "h-7 text-[11px] rounded-md transition-all flex items-center justify-center",
+                !current && "text-tx-tertiary/40",
+                current && !isSelected && !isToday && "text-tx-secondary hover:bg-app-hover",
+                isToday && !isSelected && "text-accent-primary font-bold",
+                isSelected && "bg-accent-primary text-white font-medium shadow-sm"
+              )}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 已选日期提示 + 清除 */}
+      {selectedDate && (
+        <div className="flex items-center justify-between mt-2 pt-2 border-t border-app-border/50">
+          <span className="text-[10px] text-tx-tertiary">
+            {t("noteList.filterDate")}: {selectedDate}
+          </span>
+          <button
+            onClick={onClear}
+            className="text-[10px] text-accent-primary hover:text-accent-primary/80 transition-colors"
+          >
+            {t("noteList.clearFilter")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const NoteCard = React.forwardRef<HTMLDivElement, {
   note: NoteListItem; isActive: boolean; onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -256,15 +394,21 @@ export default function NoteList() {
   const actions = useAppActions();
   const { menu, menuRef, openMenu, closeMenu } = useContextMenu();
   const [moveModal, setMoveModal] = useState<{ noteId: string; noteTitle: string; notebookId: string } | null>(null);
+  const [dateFilter, setDateFilter] = useState<string | null>(null); // YYYY-MM-DD
+  const [showCalendar, setShowCalendar] = useState(false);
   const { t } = useTranslation();
 
   const fetchNotes = useCallback(async () => {
     actions.setLoading(true);
     let notes: NoteListItem[] = [];
     if (state.viewMode === "notebook" && state.selectedNotebookId) {
-      notes = await api.getNotes({ notebookId: state.selectedNotebookId });
+      const params: Record<string, string> = { notebookId: state.selectedNotebookId };
+      if (dateFilter) { params.dateFrom = dateFilter; params.dateTo = dateFilter; }
+      notes = await api.getNotes(params);
     } else if (state.viewMode === "favorites") {
-      notes = await api.getNotes({ isFavorite: "1" });
+      const params: Record<string, string> = { isFavorite: "1" };
+      if (dateFilter) { params.dateFrom = dateFilter; params.dateTo = dateFilter; }
+      notes = await api.getNotes(params);
     } else if (state.viewMode === "trash") {
       notes = await api.getNotes({ isTrashed: "1" });
     } else if (state.viewMode === "search" && state.searchQuery) {
@@ -287,15 +431,23 @@ export default function NoteList() {
     } else if (state.viewMode === "tag" && state.selectedTagId) {
       notes = await api.getNotesWithTag(state.selectedTagId);
     } else {
-      notes = await api.getNotes();
+      const params: Record<string, string> = {};
+      if (dateFilter) { params.dateFrom = dateFilter; params.dateTo = dateFilter; }
+      notes = await api.getNotes(Object.keys(params).length > 0 ? params : undefined);
     }
     actions.setNotes(notes);
     actions.setLoading(false);
-  }, [state.viewMode, state.selectedNotebookId, state.searchQuery, state.selectedTagId]);
+  }, [state.viewMode, state.selectedNotebookId, state.searchQuery, state.selectedTagId, dateFilter]);
 
   useEffect(() => {
     fetchNotes().catch(console.error);
   }, [fetchNotes]);
+
+  // viewMode 切换时自动收起日历并清除筛选
+  useEffect(() => {
+    setDateFilter(null);
+    setShowCalendar(false);
+  }, [state.viewMode]);
 
   const handleSelectNote = async (noteId: string) => {
     const note = await api.getNote(noteId);
@@ -458,10 +610,41 @@ export default function NoteList() {
           <FileText size={16} className="text-accent-primary" />
           <h2 className="text-sm font-medium text-tx-primary">{viewTitles[state.viewMode]}</h2>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCreateNote}>
-          <Plus size={15} />
-        </Button>
+        <div className="flex items-center gap-1">
+          {/* 日历筛选按钮 */}
+          {state.viewMode !== "trash" && state.viewMode !== "search" && (
+            <button
+              onClick={() => setShowCalendar(!showCalendar)}
+              className={cn(
+                "p-1.5 rounded-md transition-colors relative",
+                showCalendar || dateFilter
+                  ? "text-accent-primary bg-accent-primary/10"
+                  : "text-tx-tertiary hover:bg-app-hover hover:text-tx-secondary"
+              )}
+              title={t("noteList.dateFilter")}
+            >
+              <CalendarDays size={15} />
+              {dateFilter && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-accent-primary" />
+              )}
+            </button>
+          )}
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCreateNote}>
+            <Plus size={15} />
+          </Button>
+        </div>
       </div>
+
+      {/* 日历筛选面板 */}
+      {showCalendar && state.viewMode !== "trash" && state.viewMode !== "search" && (
+        <div className="border-b border-app-border bg-app-surface">
+          <MiniCalendarFilter
+            selectedDate={dateFilter}
+            onSelect={(d) => setDateFilter(d)}
+            onClear={() => setDateFilter(null)}
+          />
+        </div>
+      )}
 
       {/* Count */}
       <div className="px-4 py-1.5">

@@ -119,7 +119,7 @@ function ComposeBox({ onPost }: { onPost: () => void }) {
   const selectedMoodEmoji = getMoodEmoji(mood);
 
   return (
-    <div className="bg-app-surface/60 backdrop-blur-sm rounded-2xl border border-app-border shadow-sm overflow-hidden">
+    <div className="bg-app-surface/60 backdrop-blur-sm rounded-2xl border border-app-border shadow-sm">
       {/* 输入区域 */}
       <div className="p-4 pb-2">
         <textarea
@@ -161,19 +161,19 @@ function ComposeBox({ onPost }: { onPost: () => void }) {
             <AnimatePresence>
               {showMoods && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.9, y: 4 }}
+                  initial={{ opacity: 0, scale: 0.9, y: -4 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, y: 4 }}
+                  exit={{ opacity: 0, scale: 0.9, y: -4 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute bottom-full left-0 mb-2 p-2 bg-app-elevated rounded-xl border border-app-border shadow-lg z-20"
+                  className="absolute top-full left-0 mt-2 p-2.5 bg-app-elevated rounded-xl border border-app-border shadow-lg z-20 w-[220px]"
                 >
-                  <div className="grid grid-cols-6 gap-1">
+                  <div className="grid grid-cols-6 gap-1.5">
                     {MOODS.map(({ value: v, emoji }) => (
                       <button
                         key={v}
                         onClick={() => { setMood(mood === v ? "" : v); setShowMoods(false); }}
                         className={cn(
-                          "w-8 h-8 rounded-lg flex items-center justify-center text-base transition-all",
+                          "w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-base transition-all",
                           mood === v
                             ? "bg-accent-primary/15 scale-110 ring-1 ring-accent-primary/30"
                             : "hover:bg-app-hover hover:scale-110"

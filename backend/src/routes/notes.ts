@@ -13,6 +13,8 @@ app.get("/", (c) => {
   const isTrashed = c.req.query("isTrashed");
   const search = c.req.query("search");
   const tagId = c.req.query("tagId");
+  const dateFrom = c.req.query("dateFrom"); // YYYY-MM-DD
+  const dateTo = c.req.query("dateTo");     // YYYY-MM-DD
 
   let query = `SELECT id, userId, notebookId, title, contentText, isPinned, isFavorite, isLocked,
     isArchived, isTrashed, version, createdAt, updatedAt FROM notes WHERE userId = ?`;
@@ -37,6 +39,16 @@ app.get("/", (c) => {
     params.push(notebookId);
   } else {
     query += " AND isTrashed = 0";
+  }
+
+  // 日期范围筛选（基于 updatedAt）
+  if (dateFrom) {
+    query += " AND updatedAt >= ?";
+    params.push(dateFrom + " 00:00:00");
+  }
+  if (dateTo) {
+    query += " AND updatedAt <= ?";
+    params.push(dateTo + " 23:59:59");
   }
 
   query += " ORDER BY isPinned DESC, updatedAt DESC";
