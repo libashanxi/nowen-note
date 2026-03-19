@@ -62,6 +62,7 @@ nowen-note/
 │   │   │   └── ThemeToggle.tsx        # 主题切换
 │   │   ├── hooks/         # 自定义 Hooks
 │   │   │   ├── useContextMenu.ts      # 右键菜单状态管理 + 边缘碰撞检测
+│   │   │   ├── useCapacitor.ts        # Capacitor 移动端能力（返回键/状态栏/触觉反馈）
 │   │   │   └── useSiteSettings.tsx    # 站点设置 Context（标题/图标/字体）
 │   │   ├── store/         # 状态管理（useReducer + Context）
 │   │   ├── lib/           # 工具函数 & API 封装
@@ -208,6 +209,12 @@ npm run electron:build
 
 基于 Capacitor 8 构建 Android 原生应用，连接远程服务器使用。
 
+**方法 A：使用预编译 APK（推荐）**
+
+直接从 [GitHub Releases](https://github.com/cropflre/nowen-note/releases) 下载最新的 APK 安装包，传输到手机安装即可。
+
+**方法 B：自行编译**
+
 ```bash
 # 1. 构建前端
 npm run build:frontend
@@ -217,9 +224,24 @@ npx cap sync android
 
 # 3. 用 Android Studio 打开并构建
 npx cap open android
+
+# 或直接命令行打包 Release APK（需配置签名）
+cd frontend/android
+./gradlew assembleRelease
+```
+
+**签名配置：** 如需构建 Release 版本，请在 `frontend/android/` 目录下创建 `keystore.properties` 文件：
+
+```properties
+storePassword=你的密码
+keyPassword=你的密码
+keyAlias=你的别名
+storeFile=你的keystore路径
 ```
 
 移动端首次启动需配置服务器地址（IP:端口 或域名），通过 HTTP 连接到已部署的 nowen-note 后端。
+
+**Android 图标：** 自定义设计的 Nowen Note 品牌图标，深色背景（#0D1117）+ 白色笔记纸 + 蓝色品牌字母 N + 铅笔装饰，支持 Android 自适应图标（Adaptive Icon）。
 
 ---
 
@@ -411,15 +433,16 @@ npx cap open android
 - 支持键盘快捷键（Tab/Enter/Delete/Space）
 - 小地图导航，缩放平移，触摸手势
 - 右键导出：PNG（2x 高清）、SVG、.xmind 格式
-- 移动端适配：长按编辑、响应式布局
+- 移动端适配：长按编辑节点、长按列表项触发导出菜单、响应式布局
 
 #### 任务管理
-- **任务中心**：独立任务管理面板
+- **任务中心**：独立任务管理面板，桌面端三栏布局（筛选面板 + 列表 + 详情）
 - **优先级**：高 / 中 / 低三级优先级
 - **截止日期**：日期选择，智能显示（今天/明天/本周/已逾期）
 - **子任务**：父子关系任务拆分
 - **多维筛选**：全部 / 今天 / 本周 / 逾期 / 已完成
 - **任务统计**：完成率、逾期数等摘要
+- **移动端适配**：水平滚动筛选标签、任务详情全屏覆盖、触摸友好的删除按钮
 
 #### 说说/动态
 - **微博风格时间线**：一句话快速发布，轻量便捷
@@ -439,7 +462,7 @@ npx cap open android
 
 #### 右键菜单系统
 - 通用右键菜单组件（毛玻璃面板 + 动画出入场）
-- 边缘碰撞检测（菜单不会溢出屏幕）
+- 四方向边缘碰撞检测（菜单不会溢出屏幕，8px 安全边距）
 - 支持分隔线、危险操作高亮、禁用状态
 - 笔记本列表 & 笔记列表均支持右键操作
 
@@ -464,14 +487,23 @@ npx cap open android
 - 深色 / 浅色 / 跟随系统三种主题模式
 - 侧边栏可折叠（仅图标模式）
 - 国际化支持：中英文双语切换
-- 移动端响应式布局，触摸手势支持
 - Framer Motion 丝滑动画
 - 全局快捷键：`Alt+N` 快速新建笔记
+- **移动端全面适配**：
+  - 抽屉式侧边栏（滑动手势开关）+ 列表/编辑器双视图切换
+  - TaskCenter 响应式三栏 → 移动端水平筛选标签 + 全屏详情
+  - SettingsModal 移动端全屏 + 顶部标签栏切换
+  - EditorPane 移动端「更多操作」菜单（删除/移动/AI/大纲）
+  - 触摸友好：所有 hover 交互按钮在移动端始终可见
+  - ContextMenu 四方向边界碰撞检测
+  - 编辑器元信息自动折行、MoveNoteModal 自适应宽度
+  - 日历筛选移动端入口、MindMap 列表长按导出
+  - safe-area-inset 安全区域适配（刘海屏 / 底部手势条）
 
 #### 多端支持
 - **Web 端**：浏览器直接访问，响应式布局适配桌面和移动端
 - **Electron 桌面端**：Windows（NSIS）/ macOS（DMG）/ Linux（AppImage），自动管理后端进程，数据存储在用户目录
-- **Android 移动端**：基于 Capacitor 构建原生应用，连接远程服务器使用
+- **Android 移动端**：基于 Capacitor 构建原生应用，自定义品牌图标，支持 Release 签名打包，连接远程服务器使用
 - **客户端模式**：Electron 和 Android 端支持配置服务器地址，通过 HTTP 连接到已部署的后端
 
 ### NPM 脚本
@@ -690,6 +722,9 @@ npx cap open android
 
 On first launch, configure the server address (IP:port or domain) to connect to your deployed nowen-note backend via HTTP.
 
+**Android Icon:** Custom-designed Nowen Note brand icon — dark background (#0D1117) + white note paper + blue brand letter N + pencil decoration, supporting Android Adaptive Icons.
+
+#### Option 5
 #### Option 5: NAS Deployment (Synology / QNAP / UGREEN / fnOS / Zspace)
 
 All NAS platforms with Docker support follow the same general steps:
@@ -763,15 +798,16 @@ All NAS platforms with Docker support follow the same general steps:
 - Keyboard shortcuts (Tab/Enter/Delete/Space)
 - Mini-map navigation, zoom/pan, touch gestures
 - Right-click export: PNG (2x HD), SVG, .xmind format
-- Mobile responsive: long-press to edit, adaptive layout
+- Mobile responsive: long-press to edit nodes, long-press list items for export menu, adaptive layout
 
 #### Task Management
-- **Task Center**: Dedicated task management panel
+- **Task Center**: Dedicated task management panel with desktop three-column layout (filter panel + list + detail)
 - **Priority levels**: High / Medium / Low
 - **Due dates**: Date picker with smart display (today/tomorrow/this week/overdue)
 - **Subtasks**: Parent-child task breakdown
 - **Multi-filter**: All / Today / This Week / Overdue / Completed
 - **Task statistics**: Completion rate, overdue count summary
+- **Mobile adaptive**: Horizontal scrollable filter tabs, full-screen task detail overlay, touch-friendly delete buttons
 
 #### Moments / Status Updates
 - **Weibo-style timeline**: Quick one-liner posting, lightweight and fast
@@ -791,7 +827,7 @@ All NAS platforms with Docker support follow the same general steps:
 
 #### Context Menu System
 - Reusable component (frosted glass panel + animated transitions)
-- Edge collision detection (menu never overflows screen)
+- Four-direction edge collision detection (menu never overflows screen, 8px safe margin)
 - Supports separators, danger action highlighting, disabled states
 - Available on both notebook tree and note list
 
@@ -816,14 +852,23 @@ All NAS platforms with Docker support follow the same general steps:
 - Light / Dark / System three theme modes
 - Collapsible sidebar (icon-only mode)
 - Internationalization: Chinese/English language switching
-- Mobile responsive layout with touch gesture support
 - Smooth Framer Motion animations
 - Global keyboard shortcut: `Alt+N` for quick note creation
+- **Comprehensive mobile adaptation**:
+  - Drawer-style sidebar (swipe gesture toggle) + list/editor dual-view switch
+  - TaskCenter responsive: desktop three-column → mobile horizontal filter tabs + full-screen detail
+  - SettingsModal mobile full-screen + top tab bar navigation
+  - EditorPane mobile "More actions" menu (delete/move/AI/outline)
+  - Touch-friendly: all hover-dependent buttons always visible on mobile
+  - ContextMenu four-direction boundary collision detection
+  - Editor meta info auto-wrap, MoveNoteModal responsive width
+  - Calendar filter mobile entry, MindMap list long-press export
+  - safe-area-inset adaptation (notch / gesture bar)
 
 #### Multi-platform Support
 - **Web**: Browser access with responsive layout for desktop and mobile
 - **Electron Desktop**: Windows (NSIS) / macOS (DMG) / Linux (AppImage), automatic backend process management, data stored in user directory
-- **Android Mobile**: Native app built with Capacitor, connects to remote server
+- **Android Mobile**: Native app built with Capacitor, custom brand icon, Release signing support, connects to remote server
 - **Client Mode**: Electron and Android clients support server address configuration via HTTP
 
 ### NPM Scripts
