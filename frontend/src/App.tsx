@@ -9,6 +9,7 @@ import TaskCenter from "@/components/TaskCenter";
 import MindMapCenter from "@/components/MindMapEditor";
 import AIChatPanel from "@/components/AIChatPanel";
 import DiaryCenter from "@/components/DiaryCenter";
+import SharedNoteView from "@/components/SharedNoteView";
 import LoginPage from "@/components/LoginPage";
 import { AppProvider, useApp, useAppActions, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH, MIN_NOTELIST_WIDTH, MAX_NOTELIST_WIDTH, DEFAULT_NOTELIST_WIDTH } from "@/store/AppContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -284,7 +285,22 @@ function AppLayout() {
       ) : isAIChatView ? (
         <div className="flex-1 flex flex-col">
           <MobileTopBar />
-          <AIChatPanel onClose={() => actions.setViewMode("all")} />
+          <AIChatPanel
+            onClose={() => actions.setViewMode("all")}
+            onNavigateToNote={async (noteId) => {
+              try {
+                const { api } = await import("@/lib/api");
+                const note = await api.getNote(noteId);
+                if (note) {
+                  actions.setActiveNote(note);
+                  actions.setViewMode("all");
+                  actions.setMobileView("editor");
+                }
+              } catch (err) {
+                console.error("Navigate to note failed:", err);
+              }
+            }}
+          />
         </div>
       ) : isDiaryView ? (
         <div className="flex-1 flex flex-col">
@@ -439,6 +455,17 @@ function AuthGate() {
 }
 
 function App() {
+  // 检查是否是分享页面路由 /share/:token
+  const path = window.location.pathname;
+  const shareMatch = path.match(/^\/share\/([A-Za-z0-9]+)$/);
+  if (shareMatch) {
+    return (
+      <ThemeProvider>
+        <SharedNoteView shareToken={shareMatch[1]} />
+      </ThemeProvider>
+    );
+  }
+
   return (
     <ThemeProvider>
       <SiteSettingsProvider>

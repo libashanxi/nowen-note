@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, X, ListTree, Lock, Unlock, Tag as TagIcon, Type, MoreHorizontal } from "lucide-react";
+import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, X, ListTree, Lock, Unlock, Tag as TagIcon, Type, MoreHorizontal, Share2, History, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import TiptapEditor, { HeadingItem } from "@/components/TiptapEditor";
@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils";
 import { Tag } from "@/types";
 import { useTranslation } from "react-i18next";
 import { haptic } from "@/hooks/useCapacitor";
+import ShareModal from "@/components/ShareModal";
+import VersionHistoryPanel from "@/components/VersionHistoryPanel";
+import CommentPanel from "@/components/CommentPanel";
 
 export default function EditorPane() {
   const { state } = useApp();
@@ -25,6 +28,9 @@ export default function EditorPane() {
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showMobileMoveMenu, setShowMobileMoveMenu] = useState(false);
   const [showMobileOutline, setShowMobileOutline] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showCommentPanel, setShowCommentPanel] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
 
   // 使用 ref 追踪最新的 activeNote，避免 handleUpdate 闭包引用过期
@@ -356,6 +362,40 @@ export default function EditorPane() {
                     <span>{t('editor.aiSuggestTags')}</span>
                   </button>
                   <div className="h-px bg-app-border mx-2 my-0.5" />
+                  {/* 分享 */}
+                  <button
+                    onClick={() => {
+                      setShowShareModal(true);
+                      setShowMobileMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-tx-secondary active:bg-app-hover transition-colors"
+                  >
+                    <Share2 size={15} className="text-emerald-500" />
+                    <span>分享</span>
+                  </button>
+                  {/* 版本历史 */}
+                  <button
+                    onClick={() => {
+                      setShowVersionHistory(true);
+                      setShowMobileMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-tx-secondary active:bg-app-hover transition-colors"
+                  >
+                    <History size={15} className="text-violet-500" />
+                    <span>版本历史</span>
+                  </button>
+                  {/* 评论 */}
+                  <button
+                    onClick={() => {
+                      setShowCommentPanel(true);
+                      setShowMobileMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-tx-secondary active:bg-app-hover transition-colors"
+                  >
+                    <MessageCircle size={15} className="text-blue-500" />
+                    <span>评论批注</span>
+                  </button>
+                  <div className="h-px bg-app-border mx-2 my-0.5" />
                   {/* 删除笔记 */}
                   <button
                     onClick={() => {
@@ -541,6 +581,33 @@ export default function EditorPane() {
             <ListTree size={14} className={cn(showOutline && "text-accent-primary")} />
           </Button>
 
+          {/* 分享 */}
+          <Button
+            variant="ghost" size="icon" className="h-7 w-7"
+            onClick={() => setShowShareModal(true)}
+            title="分享笔记"
+          >
+            <Share2 size={14} className="text-emerald-500" />
+          </Button>
+
+          {/* 版本历史 */}
+          <Button
+            variant="ghost" size="icon" className="h-7 w-7"
+            onClick={() => setShowVersionHistory(true)}
+            title="版本历史"
+          >
+            <History size={14} className="text-violet-500" />
+          </Button>
+
+          {/* 评论批注 */}
+          <Button
+            variant="ghost" size="icon" className="h-7 w-7"
+            onClick={() => setShowCommentPanel(true)}
+            title="评论批注"
+          >
+            <MessageCircle size={14} className="text-blue-500" />
+          </Button>
+
           <div className="w-px h-4 bg-app-border" />
 
           {/* AI 工具组 */}
@@ -577,7 +644,38 @@ export default function EditorPane() {
             editable={!activeNote.isLocked}
           />
         </div>
-        {showOutline && (
+      {/* 分享弹窗 */}
+      {showShareModal && (
+        <ShareModal
+          noteId={activeNote.id}
+          noteTitle={activeNote.title}
+          onClose={() => setShowShareModal(false)}
+        />
+      )}
+
+      {/* 版本历史 */}
+      {showVersionHistory && (
+        <VersionHistoryPanel
+          noteId={activeNote.id}
+          noteTitle={activeNote.title}
+          onRestore={(updated) => {
+            actions.setActiveNote(updated);
+            actions.updateNoteInList({ id: updated.id, title: updated.title, contentText: updated.contentText, updatedAt: updated.updatedAt });
+          }}
+          onClose={() => setShowVersionHistory(false)}
+        />
+      )}
+
+      {/* 评论面板 */}
+      {showCommentPanel && (
+        <CommentPanel
+          noteId={activeNote.id}
+          noteTitle={activeNote.title}
+          onClose={() => setShowCommentPanel(false)}
+        />
+      )}
+
+      {showOutline && (
           <OutlinePanel
             headings={headings}
             onSelect={(pos) => scrollToRef.current?.(pos)}

@@ -10,7 +10,10 @@ import Underline from "@tiptap/extension-underline";
 import Highlight from "@tiptap/extension-highlight";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
 import { common, createLowlight } from "lowlight";
+import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
+import { markdownToSimpleHtml } from "@/lib/importService";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Code, List, ListOrdered, Heading1, Heading2, Heading3,
@@ -151,12 +154,46 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
           class: 'task-item',
         },
       }),
+      Table.configure({
+        resizable: false,
+        HTMLAttributes: { class: 'tiptap-table' },
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
     ],
     content: parseContent(note.content),
     editable,
     editorProps: {
       attributes: {
         class: "prose prose-sm max-w-none focus:outline-none min-h-[300px] px-1",
+      },
+      handlePaste: (view, event) => {
+        // 如果剪贴板包含 HTML（如从网页复制），让 Tiptap 默认处理
+        const html = event.clipboardData?.getData("text/html");
+        if (html && html.trim().length > 0) return false;
+
+        // 仅处理纯文本粘贴
+        const text = event.clipboardData?.getData("text/plain");
+        if (!text || text.trim().length === 0) return false;
+
+        // 检测是否包含 Markdown 格式标记
+        if (looksLikeMarkdown(text)) {
+          event.preventDefault();
+          const convertedHtml = markdownToSimpleHtml(text);
+          // 使用 ProseMirror 的 API 插入 HTML 片段
+          const { state, dispatch } = view;
+          const parser = ProseMirrorDOMParser.fromSchema(state.schema);
+          const tempDiv = document.createElement("div");
+          tempDiv.innerHTML = convertedHtml;
+          const slice = parser.parseSlice(tempDiv);
+          const tr = state.tr.replaceSelection(slice);
+          dispatch(tr);
+          return true;
+        }
+
+        // 不是 Markdown，让 Tiptap 默认处理
+        return false;
       },
     },
     onUpdate: ({ editor }) => {
@@ -519,6 +556,47 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
       </AnimatePresence>
     </div>
   );
+}
+
+/**
+ * 检测粘贴的文本是否包含 Markdown 格式标记
+ * 通过匹配多种 Markdown 语法特征来判断
+ */
+function looksLikeMarkdown(text: string): boolean {
+  const lines = text.split("\n");
+  let score = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // 标题：# ## ###
+    if (/^#{1,6}\s+.+/.test(trimmed)) score += 2;
+    // 代码块开始/结束：``` 或 ~~~
+    else if (/^(`{3,}|~{3,})/.test(trimmed)) score += 2;
+    // 表格行：| xxx | xxx |
+    else if (/^\|.+\|$/.test(trimmed)) score += 2;
+    // 表格分隔行：|---|---|
+    else if (/^\|[\s:]*-{2,}[\s:]*\|/.test(trimmed)) score += 3;
+    // 无序列表：- xxx 或 * xxx（排除分隔线）
+    else if (/^[-*+]\s+(?!\[[ xX]\])/.test(trimmed) && !/^[-*_]{3,}$/.test(trimmed)) score += 1;
+    // 有序列表：1. xxx
+    else if (/^\d+\.\s+/.test(trimmed)) score += 1;
+    // 引用块：> xxx
+    else if (/^>\s+/.test(trimmed)) score += 1;
+    // 粗体：**xxx**
+    else if (/\*\*.+?\*\*/.test(trimmed)) score += 1;
+    // 行内代码：`xxx`
+    else if (/`.+?`/.test(trimmed)) score += 0.5;
+    // 链接：[xxx](url)
+    else if (/\[.+?\]\(.+?\)/.test(trimmed)) score += 1;
+    // 任务列表：- [x] 或 - [ ]
+    else if (/^[-*]\s+\[[ xX]\]\s+/.test(trimmed)) score += 2;
+    // 水平线：--- *** ___
+    else if (/^(---|\*\*\*|___)$/.test(trimmed)) score += 1;
+  }
+
+  // 得分阈值：至少需要 3 分才认为是 Markdown 内容
+  // 单独的一行粗体或行内代码不应触发转换
+  return score >= 3;
 }
 
 function parseContent(content: string): any {

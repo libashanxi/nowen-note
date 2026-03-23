@@ -167,3 +167,72 @@ export interface DiaryStats {
   total: number;
   todayCount: number;
 }
+
+// 分享
+export type SharePermission = "view" | "comment" | "edit";
+
+export interface Share {
+  id: string;
+  noteId: string;
+  ownerId: string;
+  shareToken: string;
+  shareType: string;
+  permission: SharePermission;
+  hasPassword: boolean;
+  expiresAt: string | null;
+  maxViews: number | null;
+  viewCount: number;
+  isActive: number;
+  createdAt: string;
+  updatedAt: string;
+  noteTitle?: string;
+}
+
+export interface ShareInfo {
+  id: string;
+  noteTitle: string;
+  ownerName: string;
+  permission: SharePermission;
+  needPassword: boolean;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface SharedNoteContent {
+  title: string;
+  content: string;
+  contentText: string;
+  permission: SharePermission;
+  updatedAt: string;
+  version?: number;
+}
+
+// 版本历史
+export interface NoteVersion {
+  id: string;
+  noteId: string;
+  userId: string;
+  username?: string;
+  title: string;
+  content?: string;
+  contentText?: string;
+  version: number;
+  changeType: string;
+  changeSummary: string | null;
+  createdAt: string;
+}
+
+// 评论批注
+export interface ShareComment {
+  id: string;
+  noteId: string;
+  userId: string;
+  username: string;
+  avatarUrl: string | null;
+  parentId: string | null;
+  content: string;
+  anchorData: string | null;
+  isResolved: number;
+  createdAt: string;
+  updatedAt: string;
+}

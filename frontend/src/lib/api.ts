@@ -1,4 +1,4 @@
-import { Notebook, Note, NoteListItem, Tag, SearchResult, User, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem, Diary, DiaryTimeline, DiaryStats } from "@/types";
+import { Notebook, Note, NoteListItem, Tag, SearchResult, User, Task, TaskStats, TaskFilter, CustomFont, MindMap, MindMapListItem, Diary, DiaryTimeline, DiaryStats, Share, ShareInfo, SharedNoteContent, NoteVersion, ShareComment } from "@/types";
 
 // 服务器地址管理
 const SERVER_URL_KEY = "nowen-server-url";
@@ -204,6 +204,101 @@ export const api = {
   deleteDiary: (id: string) => request(`/diary/${id}`, { method: "DELETE" }),
   getDiaryStats: () => request<DiaryStats>("/diary/stats"),
 
+  // Shares (分享管理)
+  createShare: (data: { noteId: string; permission?: string; password?: string; expiresAt?: string; maxViews?: number }) =>
+    request<Share>("/shares", { method: "POST", body: JSON.stringify(data) }),
+  getShares: () => request<Share[]>("/shares"),
+  getSharesByNote: (noteId: string) => request<Share[]>(`/shares/note/${noteId}`),
+  getShare: (id: string) => request<Share>(`/shares/${id}`),
+  updateShare: (id: string, data: Partial<{ permission: string; password: string; expiresAt: string; maxViews: number; isActive: number }>) =>
+    request<Share>(`/shares/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteShare: (id: string) => request(`/shares/${id}`, { method: "DELETE" }),
+
+  // 分享状态批量查询
+  getSharedNoteIds: () => request<string[]>("/shares/status/batch"),
+
+  // 版本历史
+  getNoteVersions: (noteId: string, limit = 20, offset = 0) =>
+    request<{ versions: NoteVersion[]; total: number }>(`/shares/note/${noteId}/versions?limit=${limit}&offset=${offset}`),
+  getNoteVersion: (noteId: string, versionId: string) =>
+    request<NoteVersion>(`/shares/note/${noteId}/versions/${versionId}`),
+  restoreNoteVersion: (noteId: string, versionId: string) =>
+    request<Note>(`/shares/note/${noteId}/versions/${versionId}/restore`, { method: "POST" }),
+
+  // 评论批注
+  getNoteComments: (noteId: string) => request<ShareComment[]>(`/shares/note/${noteId}/comments`),
+  addNoteComment: (noteId: string, data: { content: string; parentId?: string; anchorData?: string }) =>
+    request<ShareComment>(`/shares/note/${noteId}/comments`, { method: "POST", body: JSON.stringify(data) }),
+  deleteNoteComment: (noteId: string, commentId: string) =>
+    request(`/shares/note/${noteId}/comments/${commentId}`, { method: "DELETE" }),
+  toggleCommentResolved: (noteId: string, commentId: string) =>
+    request<ShareComment>(`/shares/note/${noteId}/comments/${commentId}/resolve`, { method: "PATCH" }),
+
+  // Shared (公开访问，无需 JWT)
+  getShareInfo: async (token: string): Promise<ShareInfo> => {
+    const res = await fetch(`${getBaseUrl()}/shared/${token}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `请求失败: ${res.status}`);
+    }
+    return res.json();
+  },
+  verifySharePassword: async (token: string, password: string): Promise<{ success: boolean; accessToken: string }> => {
+    const res = await fetch(`${getBaseUrl()}/shared/${token}/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `请求失败: ${res.status}`);
+    }
+    return res.json();
+  },
+  getSharedContent: async (token: string, accessToken?: string): Promise<SharedNoteContent> => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+    const res = await fetch(`${getBaseUrl()}/shared/${token}/content`, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `请求失败: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  // Phase 4: 同步轮询
+  pollSharedNote: async (token: string, accessToken?: string): Promise<{ version: number; updatedAt: string }> => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+    const res = await fetch(`${getBaseUrl()}/shared/${token}/poll`, { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `请求失败: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  // 公开评论
+  getSharedComments: async (token: string, accessToken?: string): Promise<ShareComment[]> => {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+    const res = await fetch(`${getBaseUrl()}/shared/${token}/comments`, { headers });
+    if (!res.ok) return [];
+    return res.json();
+  },
+  addSharedComment: async (token: string, data: { content: string; parentId?: string; guestName?: string }, accessToken?: string): Promise<ShareComment> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+    const res = await fetch(`${getBaseUrl()}/shared/${token}/comments`, {
+      method: "POST", headers, body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `请求失败: ${res.status}`);
+    }
+    return res.json();
+  },
+
   // AI
   getAISettings: () =>
     request<{ ai_provider: string; ai_api_url: string; ai_api_key: string; ai_api_key_set: boolean; ai_model: string }>("/ai/settings"),
@@ -216,7 +311,7 @@ export const api = {
     request<{ success: boolean; message?: string; error?: string }>("/ai/test", { method: "POST" }),
   getAIModels: () =>
     request<{ models: { id: string; name: string }[] }>("/ai/models"),
-  aiChat: async (action: string, text: string, context?: string, onChunk?: (chunk: string) => void): Promise<string> => {
+  aiChat: async (action: string, text: string, context?: string, onChunk?: (chunk: string) => void, customPrompt?: string): Promise<string> => {
     const token = getToken();
     const res = await fetch(`${getBaseUrl()}/ai/chat`, {
       method: "POST",
@@ -224,7 +319,7 @@ export const api = {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ action, text, context }),
+      body: JSON.stringify({ action, text, context, ...(customPrompt ? { customPrompt } : {}) }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -305,6 +400,95 @@ export const api = {
       }
     }
     return result;
+  },
+
+  getKnowledgeStats: async (): Promise<{
+    noteCount: number;
+    ftsCount: number;
+    notebookCount: number;
+    tagCount: number;
+    recentTopics: string[];
+    indexed: boolean;
+  }> => {
+    const token = getToken();
+    const res = await fetch(`${getBaseUrl()}/ai/knowledge-stats`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) throw new Error("获取知识库统计失败");
+    return res.json();
+  },
+
+  // ③ 文档智能解析
+  parseDocument: async (
+    file: File,
+    options?: { notebookId?: string; formatMode?: "markdown" | "note" }
+  ): Promise<{
+    success: boolean;
+    markdown: string;
+    fileName?: string;
+    noteId?: string;
+    saved?: boolean;
+    error?: string;
+  }> => {
+    const token = getToken();
+    const form = new FormData();
+    form.append("file", file);
+    if (options?.notebookId) form.append("notebookId", options.notebookId);
+    if (options?.formatMode) form.append("formatMode", options.formatMode);
+    const res = await fetch(`${getBaseUrl()}/ai/parse-document`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `解析失败: ${res.status}`);
+    }
+    return res.json();
+  },
+
+  // ⑤ 批量 Markdown 格式化
+  batchFormatNotes: async (noteIds: string[]): Promise<{
+    total: number;
+    success: number;
+    failed: number;
+    results: { id: string; title: string; success: boolean; error?: string }[];
+  }> => {
+    return request("/ai/batch-format", {
+      method: "POST",
+      body: JSON.stringify({ noteIds }),
+    });
+  },
+
+  // ⑥ 知识库文档导入
+  importToKnowledge: async (
+    files: File[],
+    notebookId?: string
+  ): Promise<{
+    total: number;
+    success: number;
+    failed: number;
+    notebookId: string;
+    results: { fileName: string; success: boolean; noteId?: string; error?: string }[];
+  }> => {
+    const token = getToken();
+    const form = new FormData();
+    for (const file of files) {
+      form.append("files", file);
+    }
+    if (notebookId) form.append("notebookId", notebookId);
+    const res = await fetch(`${getBaseUrl()}/ai/import-to-knowledge`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `导入失败: ${res.status}`);
+    }
+    return res.json();
   },
 
 };

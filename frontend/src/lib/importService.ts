@@ -8,6 +8,7 @@ import Underline from "@tiptap/extension-underline";
 import Highlight from "@tiptap/extension-highlight";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
 import { common, createLowlight } from "lowlight";
 
 const lowlight = createLowlight(common);
@@ -24,6 +25,10 @@ const tiptapExtensions = [
   Highlight.configure({ multicolor: true }),
   TaskList,
   TaskItem.configure({ nested: true }),
+  Table.configure({ resizable: false }),
+  TableRow,
+  TableHeader,
+  TableCell,
 ];
 
 export interface ImportFileInfo {
@@ -239,7 +244,7 @@ function extractFrontmatterDates(md: string): { createdAt?: string; updatedAt?: 
 }
 
 // 将 Markdown 转为 HTML（用于存储到 Tiptap 格式）
-function markdownToSimpleHtml(md: string): string {
+export function markdownToSimpleHtml(md: string): string {
   // 去除 YAML frontmatter
   const content = md.replace(/^---[\s\S]*?---\n*/m, "");
   const lines = content.split("\n");
@@ -311,6 +316,47 @@ function markdownToSimpleHtml(md: string): string {
       const level = headingMatch[1].length;
       htmlParts.push(`<h${level}>${inlineMarkdown(headingMatch[2])}</h${level}>`);
       i++;
+      continue;
+    }
+
+    // Markdown 表格（| col1 | col2 | ...）
+    if (/^\|(.+)\|\s*$/.test(trimmed)) {
+      const tableRows: string[][] = [];
+      let hasHeader = false;
+      while (i < lines.length && /^\|(.+)\|\s*$/.test(lines[i].trim())) {
+        const row = lines[i].trim();
+        // 检测分隔行 |---|---|---|
+        if (/^\|[\s:]*-{2,}[\s:]*\|/.test(row)) {
+          hasHeader = true;
+          i++;
+          continue;
+        }
+        const cells = row
+          .replace(/^\|\s*/, "")
+          .replace(/\s*\|$/, "")
+          .split(/\s*\|\s*/);
+        tableRows.push(cells);
+        i++;
+      }
+      if (tableRows.length > 0) {
+        let tableHtml = "<table>";
+        tableRows.forEach((cells, idx) => {
+          const isHead = hasHeader && idx === 0;
+          const tag = isHead ? "th" : "td";
+          const wrap = isHead ? "thead" : (idx === 1 && hasHeader ? "tbody" : "");
+          if (wrap === "thead") tableHtml += "<thead>";
+          if (wrap === "tbody") tableHtml += "<tbody>";
+          tableHtml += "<tr>";
+          cells.forEach((c) => {
+            tableHtml += `<${tag}>${inlineMarkdown(c.trim())}</${tag}>`;
+          });
+          tableHtml += "</tr>";
+          if (wrap === "thead") tableHtml += "</thead>";
+        });
+        if (hasHeader && tableRows.length > 1) tableHtml += "</tbody>";
+        tableHtml += "</table>";
+        htmlParts.push(tableHtml);
+      }
       continue;
     }
 

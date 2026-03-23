@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays, RefreshCw } from "lucide-react";
+import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays, RefreshCw, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
@@ -439,7 +439,8 @@ const NoteCard = React.forwardRef<HTMLDivElement, {
   note: NoteListItem; isActive: boolean; onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
   isContextTarget: boolean;
-}>(function NoteCard({ note, isActive, onClick, onContextMenu, isContextTarget }, ref) {
+  isShared?: boolean;
+}>(function NoteCard({ note, isActive, onClick, onContextMenu, isContextTarget, isShared }, ref) {
   const preview = note.contentText?.slice(0, 100) || "";
   const { t } = useTranslation();
   const wordCount = note.contentText?.length || 0;
@@ -483,6 +484,7 @@ const NoteCard = React.forwardRef<HTMLDivElement, {
             {note.title || t('common.untitledNote')}
           </h3>
           <div className="flex items-center gap-1 shrink-0">
+            {isShared && <Share2 size={11} className="text-emerald-500" />}
             {note.isLocked === 1 && <Lock size={11} className="text-orange-500" />}
             {note.isPinned === 1 && <Pin size={11} className="text-accent-primary" />}
             {note.isFavorite === 1 && <Star size={11} className="text-amber-400 fill-amber-400" />}
@@ -518,7 +520,13 @@ export default function NoteList() {
   const [moveModal, setMoveModal] = useState<{ noteId: string; noteTitle: string; notebookId: string } | null>(null);
   const [dateFilter, setDateFilter] = useState<string | null>(null); // YYYY-MM-DD
   const [showCalendar, setShowCalendar] = useState(false);
+  const [sharedNoteIds, setSharedNoteIds] = useState<Set<string>>(new Set());
   const { t } = useTranslation();
+
+  // Phase 2: 加载分享状态
+  useEffect(() => {
+    api.getSharedNoteIds().then((ids) => setSharedNoteIds(new Set(ids))).catch(() => {});
+  }, [state.notes]);
 
   const fetchNotes = useCallback(async () => {
     actions.setLoading(true);
@@ -811,6 +819,7 @@ export default function NoteList() {
                 note={note}
                 isActive={state.activeNote?.id === note.id}
                 isContextTarget={menu.isOpen && menu.targetId === note.id}
+                isShared={sharedNoteIds.has(note.id)}
                 onClick={() => handleSelectNote(note.id)}
                 onContextMenu={(e) => openMenu(e, note.id, "note")}
               />

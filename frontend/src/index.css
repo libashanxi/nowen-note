@@ -198,6 +198,47 @@ body {
   margin: 1.5rem 0;
 }
 
+/* ===== Table 表格 ===== */
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  width: 100%;
+  table-layout: auto;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+}
+
+.ProseMirror th,
+.ProseMirror td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  min-width: 80px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.ProseMirror th {
+  background: var(--color-elevated);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ProseMirror td {
+  color: var(--color-text-secondary);
+}
+
+.ProseMirror tr:nth-child(even) td {
+  background: var(--color-hover);
+}
+
+/* 表格选中状态（Tiptap table 扩展） */
+.ProseMirror .selectedCell {
+  background: rgba(var(--color-accent-primary-rgb, 59, 130, 246), 0.1);
+}
+
 .ProseMirror img {
   max-width: 100%;
   border-radius: 8px;

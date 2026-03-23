@@ -153,6 +153,65 @@ function initSchema(db: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_diaries_user_created ON diaries(userId, createdAt DESC);
 
+    -- 分享记录表
+    CREATE TABLE IF NOT EXISTS shares (
+      id TEXT PRIMARY KEY,
+      noteId TEXT NOT NULL,
+      ownerId TEXT NOT NULL,
+      shareToken TEXT NOT NULL UNIQUE,
+      shareType TEXT NOT NULL DEFAULT 'link',
+      permission TEXT NOT NULL DEFAULT 'view',
+      password TEXT,
+      expiresAt TEXT,
+      maxViews INTEGER,
+      viewCount INTEGER DEFAULT 0,
+      isActive INTEGER DEFAULT 1,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (noteId) REFERENCES notes(id) ON DELETE CASCADE,
+      FOREIGN KEY (ownerId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_shares_note ON shares(noteId);
+    CREATE INDEX IF NOT EXISTS idx_shares_owner ON shares(ownerId);
+    CREATE INDEX IF NOT EXISTS idx_shares_token ON shares(shareToken);
+
+    -- 笔记版本历史表
+    CREATE TABLE IF NOT EXISTS note_versions (
+      id TEXT PRIMARY KEY,
+      noteId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      title TEXT,
+      content TEXT,
+      contentText TEXT,
+      version INTEGER NOT NULL,
+      changeType TEXT DEFAULT 'edit',
+      changeSummary TEXT,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (noteId) REFERENCES notes(id) ON DELETE CASCADE,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_note_versions_note ON note_versions(noteId, version DESC);
+
+    -- 评论批注表
+    CREATE TABLE IF NOT EXISTS share_comments (
+      id TEXT PRIMARY KEY,
+      noteId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      parentId TEXT,
+      content TEXT NOT NULL,
+      anchorData TEXT,
+      isResolved INTEGER DEFAULT 0,
+      createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+      updatedAt TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (noteId) REFERENCES notes(id) ON DELETE CASCADE,
+      FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (parentId) REFERENCES share_comments(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_share_comments_note ON share_comments(noteId);
+
     -- 全文搜索虚拟表
     CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
       title,

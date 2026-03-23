@@ -20,6 +20,7 @@ import mindmapsRouter from "./routes/mindmaps";
 import diaryRouter from "./routes/diary";
 
 import aiRouter from "./routes/ai";
+import { sharesRouter, sharedRouter } from "./routes/shares";
 import authRouter, { JWT_SECRET } from "./routes/auth";
 import { seedDatabase } from "./db/seed";
 import { getDb } from "./db/schema";
@@ -40,6 +41,66 @@ seedDatabase();
 
 // 认证路由（无需 JWT）
 app.route("/api/auth", authRouter);
+
+// 分享公开访问路由（无需 JWT）
+// Phase 5: 速率限制 — 防止暴力破解密码和恶意轮询
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+app.use("/api/shared/*", async (c, next) => {
+  const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+  const now = Date.now();
+  const windowMs = 60000; // 1分钟窗口
+  const maxRequests = 60;  // 每分钟最多60次
+
+  const entry = rateLimitMap.get(ip);
+  if (entry && entry.resetAt > now) {
+    if (entry.count >= maxRequests) {
+      return c.json({ error: "请求过于频繁，请稍后重试" }, 429);
+    }
+    entry.count++;
+  } else {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
+  }
+
+  // 定期清理过期条目（每1000次请求清理一次）
+  if (rateLimitMap.size > 1000) {
+    for (const [key, val] of rateLimitMap.entries()) {
+      if (val.resetAt <= now) rateLimitMap.delete(key);
+    }
+  }
+
+  // Phase 5: 安全响应头
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("X-XSS-Protection", "1; mode=block");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+
+  await next();
+});
+
+// 密码验证接口加强速率限制（每分钟最多10次）
+const passwordRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+app.use("/api/shared/*/verify", async (c, next) => {
+  const ip = c.req.header("x-forwarded-for") || c.req.header("x-real-ip") || "unknown";
+  const now = Date.now();
+  const windowMs = 60000;
+  const maxAttempts = 10;
+
+  const entry = passwordRateLimitMap.get(ip);
+  if (entry && entry.resetAt > now) {
+    if (entry.count >= maxAttempts) {
+      return c.json({ error: "密码验证过于频繁，请1分钟后重试" }, 429);
+    }
+    entry.count++;
+  } else {
+    passwordRateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
+  }
+
+  await next();
+});
+
+app.route("/api/shared", sharedRouter);
 
 // 健康检查（无需 JWT）
 app.get("/api/health", (c) => c.json({ status: "ok", version: "1.0.0" }));
@@ -118,6 +179,7 @@ app.route("/api/icloud", icloudRouter);
 app.route("/api/mindmaps", mindmapsRouter);
 app.route("/api/diary", diaryRouter);
 app.route("/api/ai", aiRouter);
+app.route("/api/shares", sharesRouter);
 
 app.route("/api/settings", settingsRouter);
 app.route("/api/fonts", fontsRouter);

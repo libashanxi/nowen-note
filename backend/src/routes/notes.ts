@@ -112,6 +112,22 @@ app.put("/:id", async (c) => {
     }
   }
 
+  // Phase 3: 保存版本历史（仅在内容有实质变更时）
+  if (body.content !== undefined || body.title !== undefined) {
+    const currentNote = db.prepare("SELECT title, content, contentText, version, userId FROM notes WHERE id = ?").get(id) as any;
+    if (currentNote) {
+      const hasContentChange = (body.content !== undefined && body.content !== currentNote.content)
+        || (body.title !== undefined && body.title !== currentNote.title);
+      if (hasContentChange) {
+        const versionId = uuid();
+        db.prepare(`
+          INSERT INTO note_versions (id, noteId, userId, title, content, contentText, version, changeType)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'edit')
+        `).run(versionId, id, currentNote.userId, currentNote.title, currentNote.content, currentNote.contentText, currentNote.version);
+      }
+    }
+  }
+
   const fields: string[] = [];
   const params: any[] = [];
 
