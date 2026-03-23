@@ -208,7 +208,7 @@ ai.post("/chat", async (c) => {
     systemPrompt = customPrompt.trim() + "：";
   } else {
     systemPrompt = ACTION_PROMPTS[action];
-    if (!systemPrompt && action !== "custom") {
+    if (!systemPrompt) {
       return c.json({ error: "不支持的操作类型" }, 400);
     }
   }
@@ -501,12 +501,21 @@ ai.post("/parse-document", async (c) => {
     // 根据文件类型解析内容
     if (fileName.endsWith(".docx")) {
       const mammoth = await import("mammoth");
-      const result = await mammoth.default.convertToMarkdown({ buffer });
-      rawText = result.value;
+      const result = await mammoth.default.convertToHtml({ buffer });
+      // 将 HTML 转为纯文本/简易 Markdown
+      rawText = result.value
+        .replace(/<h([1-6])>(.*?)<\/h[1-6]>/gi, (_: string, level: string, text: string) => '#'.repeat(Number(level)) + ' ' + text + '\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/?p>/gi, '\n')
+        .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
+        .replace(/<em>(.*?)<\/em>/gi, '*$1*')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
     } else if (fileName.endsWith(".doc")) {
       const WordExtractor = (await import("word-extractor")).default;
       const extractor = new WordExtractor();
-      const doc = await extractor.extract(buffer);
+      const doc = await extractor.extract(buffer as any);
       rawText = doc.getBody();
     } else if (fileName.endsWith(".csv") || fileName.endsWith(".tsv")) {
       const text = buffer.toString("utf-8");
@@ -761,12 +770,21 @@ ai.post("/import-to-knowledge", async (c) => {
         // 解析文件内容
         if (fileName.endsWith(".docx")) {
           const mammoth = await import("mammoth");
-          const result = await mammoth.default.convertToMarkdown({ buffer });
-          rawText = result.value;
+          const result = await mammoth.default.convertToHtml({ buffer });
+          // 将 HTML 转为纯文本/简易 Markdown
+          rawText = result.value
+            .replace(/<h([1-6])>(.*?)<\/h[1-6]>/gi, (_: string, level: string, text: string) => '#'.repeat(Number(level)) + ' ' + text + '\n')
+            .replace(/<br\s*\/?>/gi, '\n')
+            .replace(/<\/?p>/gi, '\n')
+            .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
+            .replace(/<em>(.*?)<\/em>/gi, '*$1*')
+            .replace(/<[^>]+>/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
         } else if (fileName.endsWith(".doc")) {
           const WordExtractor = (await import("word-extractor")).default;
           const extractor = new WordExtractor();
-          const doc = await extractor.extract(buffer);
+          const doc = await extractor.extract(buffer as any);
           rawText = doc.getBody();
         } else if (fileName.endsWith(".csv") || fileName.endsWith(".tsv")) {
           const text = buffer.toString("utf-8");
