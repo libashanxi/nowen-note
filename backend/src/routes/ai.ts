@@ -96,13 +96,16 @@ ai.post("/test", async (c) => {
     return c.json({ success: false, error: "未配置 API Key" }, 400);
   }
 
+  // 规范化 URL：去除末尾斜杠，避免拼接出双斜杠
+  const baseUrl = settings.ai_api_url.replace(/\/+$/, "");
+
   try {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (settings.ai_api_key) {
       headers["Authorization"] = `Bearer ${settings.ai_api_key}`;
     }
 
-    const res = await fetch(`${settings.ai_api_url}/chat/completions`, {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -114,6 +117,24 @@ ai.post("/test", async (c) => {
     });
 
     if (!res.ok) {
+      // 如果是 Ollama 且返回 405，尝试回退到 Ollama 原生 API 进行连接测试
+      if (settings.ai_provider === "ollama" && res.status === 405) {
+        // 从 URL 中提取 Ollama 基础地址（去掉 /v1 后缀）
+        const ollamaBase = baseUrl.replace(/\/v1$/, "");
+        try {
+          const fallbackRes = await fetch(`${ollamaBase}/api/tags`, {
+            method: "GET",
+            signal: AbortSignal.timeout(10000),
+          });
+          if (fallbackRes.ok) {
+            return c.json({
+              success: true,
+              message: "连接成功（Ollama 原生 API）。注意：当前 Ollama 版本可能不支持 OpenAI 兼容接口（/v1/chat/completions），请升级 Ollama 至 v0.1.14 或更高版本以获得完整功能支持。",
+            });
+          }
+        } catch { /* 回退也失败，返回原始错误 */ }
+      }
+
       const err = await res.text();
       return c.json({ success: false, error: `API 返回 ${res.status}: ${err.slice(0, 200)}` }, 400);
     }

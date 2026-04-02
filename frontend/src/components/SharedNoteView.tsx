@@ -31,6 +31,39 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
   const [newComment, setNewComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
 
+  // 修复分享页面滚动问题：覆盖 #root 和 html/body 的 overflow:hidden
+  useEffect(() => {
+    const root = document.getElementById("root");
+    const html = document.documentElement;
+    const body = document.body;
+
+    // 保存原始样式
+    const originalRootOverflow = root?.style.overflow || "";
+    const originalRootHeight = root?.style.height || "";
+    const originalHtmlOverflow = html.style.overflow;
+    const originalBodyOverflow = body.style.overflow;
+
+    // 分享页面需要允许滚动
+    if (root) {
+      root.style.overflow = "auto";
+      root.style.height = "auto";
+      root.style.minHeight = "100vh";
+    }
+    html.style.overflow = "auto";
+    body.style.overflow = "auto";
+
+    return () => {
+      // 卸载时恢复原始样式
+      if (root) {
+        root.style.overflow = originalRootOverflow;
+        root.style.height = originalRootHeight;
+        root.style.minHeight = "";
+      }
+      html.style.overflow = originalHtmlOverflow;
+      body.style.overflow = originalBodyOverflow;
+    };
+  }, []);
+
   // 加载分享信息
   useEffect(() => {
     const load = async () => {
@@ -227,7 +260,7 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
   if (!content) return null;
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 overflow-y-auto" style={{ height: '100vh' }}>
       {/* 顶部信息栏 */}
       <header className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
