@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays, RefreshCw, Share2 } from "lucide-react";
+import { Plus, Pin, PinOff, Star, StarOff, Clock, FileText, Trash2, ArchiveRestore, Menu, FolderInput, ChevronRight, ChevronDown, ChevronLeft, Folder, X, Check, Lock, Unlock, CalendarDays, RefreshCw, Share2, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
@@ -440,7 +440,16 @@ const NoteCard = React.memo(React.forwardRef<HTMLDivElement, {
   onContextMenu: (e: React.MouseEvent) => void;
   isContextTarget: boolean;
   isShared?: boolean;
-}>(function NoteCard({ note, isActive, onClick, onContextMenu, isContextTarget, isShared }, ref) {
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  isDragOver?: boolean;
+  onTouchStart?: (e: React.TouchEvent) => void;
+  onTouchMove?: (e: React.TouchEvent) => void;
+  onTouchEnd?: () => void;
+}>(function NoteCard({ note, isActive, onClick, onContextMenu, isContextTarget, isShared, draggable, onDragStart, onDragOver, onDragEnd, onDrop, isDragOver, onTouchStart, onTouchMove, onTouchEnd }, ref) {
   const preview = note.contentText?.slice(0, 100) || "";
   const { t } = useTranslation();
   const wordCount = note.contentText?.length || 0;
@@ -453,13 +462,22 @@ const NoteCard = React.memo(React.forwardRef<HTMLDivElement, {
       exit={{ opacity: 0, y: -4 }}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onDrop={onDrop}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
       className={cn(
         "relative rounded-lg cursor-pointer border transition-all group overflow-hidden",
         isActive
           ? "bg-app-active border-accent-primary/30 shadow-sm"
           : isContextTarget
           ? "bg-app-hover border-accent-primary/20"
-          : "bg-transparent border-transparent hover:bg-app-hover"
+          : "bg-transparent border-transparent hover:bg-app-hover",
+        isDragOver && "border-accent-primary/50 bg-accent-primary/5"
       )}
     >
       {/* 左侧彩色指示条 */}
@@ -477,6 +495,9 @@ const NoteCard = React.memo(React.forwardRef<HTMLDivElement, {
       <div className="pl-3.5 pr-3 py-2.5">
         {/* 标题行 + 状态图标 */}
         <div className="flex items-center justify-between gap-2">
+          {draggable && (
+            <GripVertical size={14} className="text-tx-tertiary opacity-0 group-hover:opacity-60 transition-opacity shrink-0 cursor-grab active:cursor-grabbing" />
+          )}
           <h3 className={cn(
             "text-sm font-medium truncate flex-1",
             isActive ? "text-tx-primary" : "text-tx-secondary group-hover:text-tx-primary"
@@ -524,6 +545,16 @@ function VirtualNoteList({
   sharedNoteIds,
   onSelectNote,
   onContextMenu,
+  canDragSort,
+  dragOverNoteId,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onDrop,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd,
+  noteCardRefs,
 }: {
   notes: NoteListItem[];
   activeNoteId: string | undefined;
@@ -531,6 +562,16 @@ function VirtualNoteList({
   sharedNoteIds: Set<string>;
   onSelectNote: (noteId: string) => void;
   onContextMenu: (e: React.MouseEvent, noteId: string) => void;
+  canDragSort?: boolean;
+  dragOverNoteId?: string | null;
+  onDragStart?: (e: React.DragEvent, noteId: string) => void;
+  onDragOver?: (e: React.DragEvent, noteId: string) => void;
+  onDragEnd?: () => void;
+  onDrop?: (e: React.DragEvent, noteId: string) => void;
+  onTouchStart?: (noteId: string, e: React.TouchEvent) => void;
+  onTouchMove?: (e: React.TouchEvent) => void;
+  onTouchEnd?: () => void;
+  noteCardRefs?: React.MutableRefObject<Map<string, HTMLDivElement>>;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -571,12 +612,25 @@ function VirtualNoteList({
           {visibleNotes.map((note) => (
             <NoteCard
               key={note.id}
+              ref={(el) => {
+                if (el) noteCardRefs?.current.set(note.id, el);
+                else noteCardRefs?.current.delete(note.id);
+              }}
               note={note}
               isActive={activeNoteId === note.id}
               isContextTarget={menuState.isOpen && menuState.targetId === note.id}
               isShared={sharedNoteIds.has(note.id)}
               onClick={() => onSelectNote(note.id)}
               onContextMenu={(e) => onContextMenu(e, note.id)}
+              draggable={canDragSort}
+              onDragStart={(e) => onDragStart?.(e, note.id)}
+              onDragOver={(e) => onDragOver?.(e, note.id)}
+              onDragEnd={() => onDragEnd?.()}
+              onDrop={(e) => onDrop?.(e, note.id)}
+              isDragOver={dragOverNoteId === note.id}
+              onTouchStart={(e) => onTouchStart?.(note.id, e)}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
             />
           ))}
         </div>
@@ -593,6 +647,18 @@ export default function NoteList() {
   const [dateFilter, setDateFilter] = useState<string | null>(null); // YYYY-MM-DD
   const [showCalendar, setShowCalendar] = useState(false);
   const [sharedNoteIds, setSharedNoteIds] = useState<Set<string>>(new Set());
+  const [dragNoteId, setDragNoteId] = useState<string | null>(null);
+  const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
+  // 移动端触摸拖拽状态
+  const touchDragRef = useRef<{
+    noteId: string;
+    startY: number;
+    startX: number;
+    currentY: number;
+    isDragging: boolean;
+    ghostEl: HTMLDivElement | null;
+  } | null>(null);
+  const noteCardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const { t } = useTranslation();
 
   // Phase 2: 加载分享状态
@@ -789,6 +855,137 @@ export default function NoteList() {
     actions.refreshNotebooks();
   };
 
+  // 是否允许拖拽排序（仅在笔记本视图且非搜索/回收站时）
+  const canDragSort = state.viewMode === "notebook" || state.viewMode === "all" || state.viewMode === "favorites" || state.viewMode === "tag";
+
+  // 拖拽排序处理（桌面端 HTML5 Drag API）
+  const handleDragStart = useCallback((e: React.DragEvent, noteId: string) => {
+    setDragNoteId(noteId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", noteId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, noteId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (noteId !== dragNoteId) {
+      setDragOverNoteId(noteId);
+    }
+  }, [dragNoteId]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragNoteId(null);
+    setDragOverNoteId(null);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetNoteId: string) => {
+    e.preventDefault();
+    const sourceId = dragNoteId;
+    setDragNoteId(null);
+    setDragOverNoteId(null);
+    if (!sourceId || sourceId === targetNoteId) return;
+
+    const currentNotes = [...state.notes];
+    const sourceIdx = currentNotes.findIndex((n) => n.id === sourceId);
+    const targetIdx = currentNotes.findIndex((n) => n.id === targetNoteId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    // 移动元素
+    const [moved] = currentNotes.splice(sourceIdx, 1);
+    currentNotes.splice(targetIdx, 0, moved);
+
+    // 更新本地状态
+    actions.setNotes(currentNotes);
+
+    // 持久化排序
+    const items = currentNotes.map((n, i) => ({ id: n.id, sortOrder: i }));
+    try {
+      await api.reorderNotes(items);
+    } catch (err) {
+      console.error("Failed to reorder notes:", err);
+      await fetchNotes(); // 回滚
+    }
+  }, [dragNoteId, state.notes, actions, fetchNotes]);
+
+  // 移动端触摸拖拽处理
+  const handleTouchStart = useCallback((noteId: string, e: React.TouchEvent) => {
+    if (!canDragSort) return;
+    const touch = e.touches[0];
+    touchDragRef.current = {
+      noteId,
+      startY: touch.clientY,
+      startX: touch.clientX,
+      currentY: touch.clientY,
+      isDragging: false,
+      ghostEl: null,
+    };
+  }, [canDragSort]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const td = touchDragRef.current;
+    if (!td) return;
+    const touch = e.touches[0];
+    const deltaY = Math.abs(touch.clientY - td.startY);
+    const deltaX = Math.abs(touch.clientX - td.startX);
+
+    // 判断是否开始拖拽（纵向移动超过 10px 且大于横向）
+    if (!td.isDragging && deltaY > 10 && deltaY > deltaX) {
+      td.isDragging = true;
+      setDragNoteId(td.noteId);
+      haptic.light();
+    }
+
+    if (!td.isDragging) return;
+    td.currentY = touch.clientY;
+
+    // 检测当前触摸位置下的笔记卡片
+    let foundTarget: string | null = null;
+    noteCardRefs.current.forEach((el, id) => {
+      if (id === td.noteId) return;
+      const rect = el.getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        foundTarget = id;
+      }
+    });
+    setDragOverNoteId(foundTarget);
+  }, []);
+
+  const handleTouchEnd = useCallback(async () => {
+    const td = touchDragRef.current;
+    touchDragRef.current = null;
+
+    if (!td || !td.isDragging) {
+      setDragNoteId(null);
+      setDragOverNoteId(null);
+      return;
+    }
+
+    const sourceId = td.noteId;
+    const targetId = dragOverNoteId;
+    setDragNoteId(null);
+    setDragOverNoteId(null);
+
+    if (!targetId || sourceId === targetId) return;
+
+    const currentNotes = [...state.notes];
+    const sourceIdx = currentNotes.findIndex((n) => n.id === sourceId);
+    const targetIdx = currentNotes.findIndex((n) => n.id === targetId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    const [moved] = currentNotes.splice(sourceIdx, 1);
+    currentNotes.splice(targetIdx, 0, moved);
+    actions.setNotes(currentNotes);
+    haptic.medium();
+
+    const items = currentNotes.map((n, i) => ({ id: n.id, sortOrder: i }));
+    try {
+      await api.reorderNotes(items);
+    } catch (err) {
+      console.error("Failed to reorder notes:", err);
+      await fetchNotes();
+    }
+  }, [dragOverNoteId, state.notes, actions, fetchNotes]);
+
   const viewTitles: Record<string, string> = {
     all: t('noteList.allNotes'),
     notebook: state.notebooks.find((n) => n.id === state.selectedNotebookId)?.name || t('noteList.notebook'),
@@ -891,6 +1088,16 @@ export default function NoteList() {
             sharedNoteIds={sharedNoteIds}
             onSelectNote={handleSelectNote}
             onContextMenu={(e, noteId) => openMenu(e, noteId, "note")}
+            canDragSort={canDragSort}
+            dragOverNoteId={dragOverNoteId}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDrop={handleDrop}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            noteCardRefs={noteCardRefs}
           />
         ) : (
         <ScrollArea className="flex-1 min-h-0">
@@ -899,12 +1106,25 @@ export default function NoteList() {
             {state.notes.map((note) => (
               <NoteCard
                 key={note.id}
+                ref={(el) => {
+                  if (el) noteCardRefs.current.set(note.id, el);
+                  else noteCardRefs.current.delete(note.id);
+                }}
                 note={note}
                 isActive={state.activeNote?.id === note.id}
                 isContextTarget={menu.isOpen && menu.targetId === note.id}
                 isShared={sharedNoteIds.has(note.id)}
                 onClick={() => handleSelectNote(note.id)}
                 onContextMenu={(e) => openMenu(e, note.id, "note")}
+                draggable={canDragSort}
+                onDragStart={(e) => handleDragStart(e, note.id)}
+                onDragOver={(e) => handleDragOver(e, note.id)}
+                onDragEnd={handleDragEnd}
+                onDrop={(e) => handleDrop(e, note.id)}
+                isDragOver={dragOverNoteId === note.id}
+                onTouchStart={(e) => handleTouchStart(note.id, e)}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
               />
             ))}
           </AnimatePresence>

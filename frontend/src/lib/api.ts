@@ -64,6 +64,8 @@ export const api = {
   createNotebook: (data: Partial<Notebook>) => request<Notebook>("/notebooks", { method: "POST", body: JSON.stringify(data) }),
   updateNotebook: (id: string, data: Partial<Notebook>) => request<Notebook>(`/notebooks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteNotebook: (id: string) => request(`/notebooks/${id}`, { method: "DELETE" }),
+  reorderNotebooks: (items: { id: string; sortOrder: number }[]) =>
+    request<{ success: boolean }>("/notebooks/reorder/batch", { method: "PUT", body: JSON.stringify({ items }) }),
 
   // Notes
   getNotes: (params?: Record<string, string>) => {
@@ -74,6 +76,8 @@ export const api = {
   createNote: (data: Partial<Note>) => request<Note>("/notes", { method: "POST", body: JSON.stringify(data) }),
   updateNote: (id: string, data: Partial<Note>) => request<Note>(`/notes/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteNote: (id: string) => request(`/notes/${id}`, { method: "DELETE" }),
+  reorderNotes: (items: { id: string; sortOrder: number }[]) =>
+    request<{ success: boolean }>("/notes/reorder/batch", { method: "PUT", body: JSON.stringify({ items }) }),
 
   // Tags
   getTags: () => request<Tag[]>("/tags"),

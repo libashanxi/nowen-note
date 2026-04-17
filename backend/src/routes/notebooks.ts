@@ -37,6 +37,23 @@ app.post("/", async (c) => {
   return c.json(notebook, 201);
 });
 
+// 批量更新笔记本排序（必须在 /:id 路由之前注册，否则 'reorder' 会被当作 :id 参数匹配）
+app.put("/reorder/batch", async (c) => {
+  const db = getDb();
+  const body = await c.req.json();
+  const items: { id: string; sortOrder: number }[] = body.items;
+  if (!Array.isArray(items)) return c.json({ error: "items is required" }, 400);
+
+  const stmt = db.prepare("UPDATE notebooks SET sortOrder = ? WHERE id = ?");
+  const updateMany = db.transaction((list: { id: string; sortOrder: number }[]) => {
+    for (const item of list) {
+      stmt.run(item.sortOrder, item.id);
+    }
+  });
+  updateMany(items);
+  return c.json({ success: true });
+});
+
 // 更新笔记本
 app.put("/:id", async (c) => {
   const db = getDb();

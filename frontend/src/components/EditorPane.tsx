@@ -31,7 +31,25 @@ export default function EditorPane() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showCommentPanel, setShowCommentPanel] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Delete 键删除笔记快捷键（仅在编辑器未聚焦时生效）
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Delete" && activeNote && !activeNote.isLocked) {
+        // 检查焦点是否在编辑器内部（如果在编辑器内，Delete 键应该正常删除文字）
+        const activeEl = document.activeElement;
+        const isInEditor = activeEl?.closest(".ProseMirror") || activeEl?.tagName === "INPUT" || activeEl?.tagName === "TEXTAREA";
+        if (!isInEditor) {
+          e.preventDefault();
+          setShowDeleteConfirm(true);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeNote]);
 
   // 使用 ref 追踪最新的 activeNote，避免 handleUpdate 闭包引用过期
   const activeNoteRef = useRef(activeNote);
@@ -674,6 +692,52 @@ export default function EditorPane() {
           onClose={() => setShowCommentPanel(false)}
         />
       )}
+
+      {/* Delete 键删除确认弹窗 */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowDeleteConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-app-surface border border-app-border rounded-xl shadow-2xl p-6 max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                  <Trash2 size={18} className="text-red-500" />
+                </div>
+                <h3 className="text-base font-semibold text-tx-primary">{t('sidebar.deleteNoteTitle')}</h3>
+              </div>
+              <p className="text-sm text-tx-secondary mb-5">{t('sidebar.deleteNoteConfirm')}</p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-sm rounded-lg bg-app-hover text-tx-secondary hover:bg-app-active transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    moveToTrash();
+                  }}
+                  className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                >
+                  {t('sidebar.confirmDeleteNote')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {showOutline && (
           <OutlinePanel

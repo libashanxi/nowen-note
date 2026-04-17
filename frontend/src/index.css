@@ -231,6 +231,16 @@ body {
   border: 1px solid var(--color-border);
 }
 
+/* ===== 缩进级别 ===== */
+.ProseMirror [data-indent="1"] { padding-left: 2rem !important; }
+.ProseMirror [data-indent="2"] { padding-left: 4rem !important; }
+.ProseMirror [data-indent="3"] { padding-left: 6rem !important; }
+.ProseMirror [data-indent="4"] { padding-left: 8rem !important; }
+.ProseMirror [data-indent="5"] { padding-left: 10rem !important; }
+.ProseMirror [data-indent="6"] { padding-left: 12rem !important; }
+.ProseMirror [data-indent="7"] { padding-left: 14rem !important; }
+.ProseMirror [data-indent="8"] { padding-left: 16rem !important; }
+
 .ProseMirror th,
 .ProseMirror td {
   border: 1px solid var(--color-border);

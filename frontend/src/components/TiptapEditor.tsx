@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, Extension } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { AnimatePresence, motion } from "framer-motion";import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -10,6 +10,7 @@ import Highlight from "@tiptap/extension-highlight";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table";
+import TextAlign from "@tiptap/extension-text-align";
 import { common, createLowlight } from "lowlight";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { markdownToSimpleHtml } from "@/lib/importService";
@@ -17,7 +18,9 @@ import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Code, List, ListOrdered, Heading1, Heading2, Heading3,
   Quote, ImagePlus, CheckSquare, Highlighter, Minus, Undo, Redo,
-  FileCode, Sparkles, X, ZoomIn, ZoomOut, RotateCcw
+  FileCode, Sparkles, X, ZoomIn, ZoomOut, RotateCcw,
+  Table2, Indent, Outdent, AlignLeft, AlignCenter, AlignRight, Trash2,
+  FileType, Check, AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Note, Tag } from "@/types";
@@ -27,6 +30,28 @@ import { SlashCommandsMenu, getDefaultSlashCommands, createSlashExtension, creat
 import { useTranslation } from "react-i18next";
 
 const lowlight = createLowlight(common);
+
+// 自定义缩进扩展
+const IndentExtension = Extension.create({
+  name: "indent",
+  addGlobalAttributes() {
+    return [
+      {
+        types: ["paragraph", "heading"],
+        attributes: {
+          indent: {
+            default: 0,
+            parseHTML: (element) => parseInt(element.getAttribute("data-indent") || "0", 10),
+            renderHTML: (attributes) => {
+              if (!attributes.indent || attributes.indent === 0) return {};
+              return { "data-indent": attributes.indent };
+            },
+          },
+        },
+      },
+    ];
+  },
+});
 
 export interface HeadingItem {
   id: string;
@@ -189,6 +214,10 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
       TableRow,
       TableHeader,
       TableCell,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      IndentExtension,
       slashExtension.current,
     ],
     content: parseContent(note.content),
@@ -198,17 +227,55 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         class: "prose prose-sm max-w-none focus:outline-none min-h-[300px] px-1",
       },
       handlePaste: (view, event) => {
-        // 如果剪贴板包含 HTML（如从网页复制），让 Tiptap 默认处理
-        const html = event.clipboardData?.getData("text/html");
-        if (html && html.trim().length > 0) return false;
+        // 始终阻止浏览器默认粘贴行为，防止页面跳转到空白页
+        event.preventDefault();
+        try {
+          // 处理剪贴板中的图片文件（如截图粘贴）
+          const items = event.clipboardData?.items;
+          if (items) {
+            for (let i = 0; i < items.length; i++) {
+              if (items[i].type.startsWith("image/")) {
+                const file = items[i].getAsFile();
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    const src = e.target?.result as string;
+                    if (src) {
+                      const { state: editorState, dispatch } = view;
+                      const node = editorState.schema.nodes.image?.create({ src });
+                      if (node) {
+                        const tr = editorState.tr.replaceSelectionWith(node);
+                        dispatch(tr);
+                      }
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                }
+                return true;
+              }
+            }
+          }
+
+          // 如果剪贴板包含 HTML（如从网页复制），手动插入 HTML 内容
+          const html = event.clipboardData?.getData("text/html");
+          if (html && html.trim().length > 0) {
+            const { state, dispatch } = view;
+            const parser = ProseMirrorDOMParser.fromSchema(state.schema);
+            const tempDiv = document.createElement("div");
+            tempDiv.innerHTML = html;
+            const slice = parser.parseSlice(tempDiv);
+            const tr = state.tr.replaceSelection(slice);
+            dispatch(tr);
+            return true;
+          }
 
         // 仅处理纯文本粘贴
         const text = event.clipboardData?.getData("text/plain");
-        if (!text || text.trim().length === 0) return false;
+        if (!text || text.trim().length === 0) return true;
 
         // 检测是否包含 Markdown 格式标记
         if (looksLikeMarkdown(text)) {
-          event.preventDefault();
+
           // 显示转换中提示
           showPasteToast("converting", t("tiptap.markdownConverting"));
           try {
@@ -234,8 +301,24 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
           return true;
         }
 
-        // 不是 Markdown，让 Tiptap 默认处理
-        return false;
+        // 不是 Markdown，手动插入纯文本
+        const { state: st, dispatch: dp } = view;
+        const tr = st.tr.insertText(text);
+        dp(tr);
+        return true;
+        } catch (err) {
+          console.error("Paste handling error:", err);
+          // 出错时尝试插入纯文本，避免页面崩溃
+          try {
+            const fallbackText = event.clipboardData?.getData("text/plain") || "";
+            if (fallbackText) {
+              const { state: fst, dispatch: fdp } = view;
+              const tr = fst.tr.insertText(fallbackText);
+              fdp(tr);
+            }
+          } catch {}
+          return true;
+        }
       },
     },
     onUpdate: ({ editor }) => {
@@ -557,6 +640,125 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         </ToolbarButton>
         <ToolbarButton onClick={handleImageUpload} title={t('tiptap.insertImage')}>
           <ImagePlus size={iconSize} />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+          title={t('tiptap.insertTable')}
+        >
+          <Table2 size={iconSize} />
+        </ToolbarButton>
+
+        {/* 表格操作按钮（仅在光标在表格内时显示） */}
+        {editor.isActive('table') && (
+          <>
+            <ToolbarDivider />
+            <ToolbarButton
+              onClick={() => editor.chain().focus().addRowAfter().run()}
+              title={t('tiptap.addRowAfter')}
+            >
+              <span className="text-[10px] font-bold leading-none">+行</span>
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().deleteRow().run()}
+              title={t('tiptap.deleteRow')}
+            >
+              <span className="text-[10px] font-bold leading-none text-red-500">-行</span>
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().addColumnAfter().run()}
+              title={t('tiptap.addColumnAfter')}
+            >
+              <span className="text-[10px] font-bold leading-none">+列</span>
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().deleteColumn().run()}
+              title={t('tiptap.deleteColumn')}
+            >
+              <span className="text-[10px] font-bold leading-none text-red-500">-列</span>
+            </ToolbarButton>
+            <ToolbarButton
+              onClick={() => editor.chain().focus().deleteTable().run()}
+              title={t('tiptap.deleteTable')}
+            >
+              <Trash2 size={iconSize - 2} className="text-red-500" />
+            </ToolbarButton>
+          </>
+        )}
+
+        <ToolbarDivider />
+
+        {/* 缩进控制 */}
+        <ToolbarButton
+          onClick={() => {
+            if (editor.isActive("taskList")) {
+              editor.chain().focus().sinkListItem("taskItem").run();
+            } else if (editor.isActive("bulletList") || editor.isActive("orderedList")) {
+              editor.chain().focus().sinkListItem("listItem").run();
+            } else {
+              // 对非列表内容，增加缩进级别
+              const { from, to } = editor.state.selection;
+              editor.chain().focus().command(({ tr }) => {
+                tr.doc.nodesBetween(from, to, (node, pos) => {
+                  if (node.isBlock && node.type.name !== "doc") {
+                    const currentIndent = (node.attrs as any).indent || 0;
+                    tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: Math.min(currentIndent + 1, 8) });
+                  }
+                });
+                return true;
+              }).run();
+            }
+          }}
+          title={t('tiptap.indent')}
+        >
+          <Indent size={iconSize} />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => {
+            if (editor.isActive("taskList")) {
+              editor.chain().focus().liftListItem("taskItem").run();
+            } else if (editor.isActive("bulletList") || editor.isActive("orderedList")) {
+              editor.chain().focus().liftListItem("listItem").run();
+            } else {
+              const { from, to } = editor.state.selection;
+              editor.chain().focus().command(({ tr }) => {
+                tr.doc.nodesBetween(from, to, (node, pos) => {
+                  if (node.isBlock && node.type.name !== "doc") {
+                    const currentIndent = (node.attrs as any).indent || 0;
+                    tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: Math.max(currentIndent - 1, 0) });
+                  }
+                });
+                return true;
+              }).run();
+            }
+          }}
+          title={t('tiptap.outdent')}
+        >
+          <Outdent size={iconSize} />
+        </ToolbarButton>
+
+        <ToolbarDivider />
+
+        {/* 段落对齐 */}
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('left').run()}
+          isActive={editor.isActive({ textAlign: 'left' })}
+          title={t('tiptap.alignLeft')}
+        >
+          <AlignLeft size={iconSize} />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('center').run()}
+          isActive={editor.isActive({ textAlign: 'center' })}
+          title={t('tiptap.alignCenter')}
+        >
+          <AlignCenter size={iconSize} />
+        </ToolbarButton>
+        <ToolbarButton
+          onClick={() => editor.chain().focus().setTextAlign('right').run()}
+          isActive={editor.isActive({ textAlign: 'right' })}
+          title={t('tiptap.alignRight')}
+        >
+          <AlignRight size={iconSize} />
         </ToolbarButton>
 
         <ToolbarDivider />

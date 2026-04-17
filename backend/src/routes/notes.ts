@@ -53,9 +53,26 @@ app.get("/", (c) => {
     params.push(dateTo + " 23:59:59");
   }
 
-  query += " ORDER BY isPinned DESC, updatedAt DESC";
+  query += " ORDER BY isPinned DESC, sortOrder ASC, updatedAt DESC";
   const notes = db.prepare(query).all(...params);
   return c.json(notes);
+});
+
+// 批量更新笔记排序（必须在 /:id 路由之前注册，否则 'reorder' 会被当作 :id 参数匹配）
+app.put("/reorder/batch", async (c) => {
+  const db = getDb();
+  const body = await c.req.json();
+  const items: { id: string; sortOrder: number }[] = body.items;
+  if (!Array.isArray(items)) return c.json({ error: "items is required" }, 400);
+
+  const stmt = db.prepare("UPDATE notes SET sortOrder = ? WHERE id = ?");
+  const updateMany = db.transaction((list: { id: string; sortOrder: number }[]) => {
+    for (const item of list) {
+      stmt.run(item.sortOrder, item.id);
+    }
+  });
+  updateMany(items);
+  return c.json({ success: true });
 });
 
 // 获取单个笔记（完整内容）
@@ -150,6 +167,7 @@ app.put("/:id", async (c) => {
     fields.push("isTrashed = ?"); params.push(body.isTrashed);
     if (body.isTrashed) { fields.push("trashedAt = datetime('now')"); }
   }
+  if (body.sortOrder !== undefined) { fields.push("sortOrder = ?"); params.push(body.sortOrder); }
 
   // 仅在内容字段（标题、正文、笔记本）变更时更新 updatedAt
   // 元数据操作（收藏、置顶、锁定、归档、回收站）不应修改 updatedAt

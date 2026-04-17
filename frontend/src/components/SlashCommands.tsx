@@ -4,7 +4,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import {
   Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
   Quote, Code, FileCode, Minus, ImagePlus, Sparkles,
-  Bold, Italic, Highlighter
+  Bold, Italic, Highlighter, Table2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -290,6 +290,15 @@ export function getDefaultSlashCommands(t: (key: string) => string, onImageUploa
       category: t("slash.catInsert"),
       keywords: ["image", "picture", "photo", "图片", "插图"],
       action: () => onImageUpload?.(),
+    },
+    {
+      id: "table",
+      label: t("slash.table"),
+      description: t("slash.tableDesc"),
+      icon: <Table2 size={16} />,
+      category: t("slash.catInsert"),
+      keywords: ["table", "grid", "表格"],
+      action: (editor) => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
     },
     // AI
     {

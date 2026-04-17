@@ -4,7 +4,7 @@ import {
   BookOpen, Plus, Star, Trash2, Search, ChevronRight,
   ChevronDown, Hash, PanelLeftClose, PanelLeft, ListTodo,
   Settings, LogOut, FilePlus, FolderPlus, Edit2, X, BrainCircuit,
-  FileSpreadsheet, Bot, CalendarDays, Smile, Workflow
+  FileSpreadsheet, Bot, CalendarDays, Smile, Workflow, GripVertical
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -178,6 +178,7 @@ function NotebookItem({
   notebook, depth, onSelect, selectedId, onToggle, onContextMenu,
   editingId, editValue, onEditChange, onEditSubmit, onEditCancel,
   onIconChange,
+  draggable, onDragStart, onDragOver, onDragEnd, onDrop, dragOverId,
 }: {
   notebook: Notebook; depth: number; onSelect: (id: string) => void;
   selectedId: string | null; onToggle: (id: string) => void;
@@ -185,12 +186,19 @@ function NotebookItem({
   editingId: string | null; editValue: string;
   onEditChange: (v: string) => void; onEditSubmit: () => void; onEditCancel: () => void;
   onIconChange: (id: string, emoji: string) => void;
+  draggable?: boolean;
+  onDragStart?: (e: React.DragEvent, id: string) => void;
+  onDragOver?: (e: React.DragEvent, id: string) => void;
+  onDragEnd?: () => void;
+  onDrop?: (e: React.DragEvent, id: string) => void;
+  dragOverId?: string | null;
 }) {
   const { t } = useTranslation();
   const isSelected = selectedId === notebook.id;
   const hasChildren = notebook.children && notebook.children.length > 0;
   const isExpanded = notebook.isExpanded === 1;
   const isEditing = editingId === notebook.id;
+  const isDragOver = dragOverId === notebook.id;
   const inputRef = useRef<HTMLInputElement>(null);
   const iconRef = useRef<HTMLButtonElement>(null);
   const [showIconPicker, setShowIconPicker] = useState(false);
@@ -217,12 +225,21 @@ function NotebookItem({
         animate={{ opacity: 1, x: 0 }}
         className={cn(
           "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm group transition-colors",
-          isSelected ? "bg-app-active text-tx-primary" : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+          isSelected ? "bg-app-active text-tx-primary" : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
+          isDragOver && "border border-accent-primary/50 bg-accent-primary/5"
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={() => onSelect(notebook.id)}
         onContextMenu={(e) => onContextMenu(e, notebook.id)}
+        draggable={draggable && !isEditing}
+        onDragStart={(e) => onDragStart?.(e, notebook.id)}
+        onDragOver={(e) => { e.preventDefault(); onDragOver?.(e, notebook.id); }}
+        onDragEnd={() => onDragEnd?.()}
+        onDrop={(e) => { e.preventDefault(); onDrop?.(e, notebook.id); }}
       >
+        {draggable && (
+          <GripVertical size={12} className="text-tx-tertiary opacity-0 group-hover:opacity-60 transition-opacity shrink-0 cursor-grab active:cursor-grabbing" />
+        )}
         {hasChildren ? (
           <button
             onClick={(e) => { e.stopPropagation(); onToggle(notebook.id); }}
@@ -296,6 +313,12 @@ function NotebookItem({
                 onEditSubmit={onEditSubmit}
                 onEditCancel={onEditCancel}
                 onIconChange={onIconChange}
+                draggable={draggable}
+                onDragStart={onDragStart}
+                onDragOver={onDragOver}
+                onDragEnd={onDragEnd}
+                onDrop={onDrop}
+                dragOverId={dragOverId}
               />
             ))}
           </motion.div>
@@ -375,6 +398,10 @@ export default function Sidebar() {
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<Notebook | null>(null);
 
+  // 笔记本拖拽排序状态
+  const [dragNbId, setDragNbId] = useState<string | null>(null);
+  const [dragOverNbId, setDragOverNbId] = useState<string | null>(null);
+
   const tree = useMemo(() => buildTree(state.notebooks), [state.notebooks]);
 
   useEffect(() => {
@@ -389,6 +416,50 @@ export default function Sidebar() {
       state.notebooks.map((nb) => nb.id === id ? { ...nb, icon: emoji } : nb)
     );
   }, [state.notebooks, actions]);
+
+  // 笔记本拖拽排序处理
+  const handleNbDragStart = useCallback((e: React.DragEvent, id: string) => {
+    setDragNbId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  }, []);
+
+  const handleNbDragOver = useCallback((e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (id !== dragNbId) setDragOverNbId(id);
+  }, [dragNbId]);
+
+  const handleNbDragEnd = useCallback(() => {
+    setDragNbId(null);
+    setDragOverNbId(null);
+  }, []);
+
+  const handleNbDrop = useCallback(async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = dragNbId;
+    setDragNbId(null);
+    setDragOverNbId(null);
+    if (!sourceId || sourceId === targetId) return;
+
+    // 只对同级笔记本进行排序（简化处理）
+    const currentList = [...state.notebooks];
+    const sourceIdx = currentList.findIndex((n) => n.id === sourceId);
+    const targetIdx = currentList.findIndex((n) => n.id === targetId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    const [moved] = currentList.splice(sourceIdx, 1);
+    currentList.splice(targetIdx, 0, moved);
+    actions.setNotebooks(currentList);
+
+    const items = currentList.map((n, i) => ({ id: n.id, sortOrder: i }));
+    try {
+      await api.reorderNotebooks(items);
+    } catch (err) {
+      console.error("Failed to reorder notebooks:", err);
+      actions.refreshNotebooks();
+    }
+  }, [dragNbId, state.notebooks, actions]);
 
   const handleNotebookSelect = (id: string) => {
     actions.setSelectedNotebook(id);
@@ -631,6 +702,12 @@ export default function Sidebar() {
               onEditSubmit={handleEditSubmit}
               onEditCancel={handleEditCancel}
               onIconChange={handleIconChange}
+              draggable={true}
+              onDragStart={handleNbDragStart}
+              onDragOver={handleNbDragOver}
+              onDragEnd={handleNbDragEnd}
+              onDrop={handleNbDrop}
+              dragOverId={dragOverNbId}
             />
           ))}
         </div>
