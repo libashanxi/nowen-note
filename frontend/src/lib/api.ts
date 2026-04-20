@@ -66,6 +66,8 @@ export const api = {
   deleteNotebook: (id: string) => request(`/notebooks/${id}`, { method: "DELETE" }),
   reorderNotebooks: (items: { id: string; sortOrder: number }[]) =>
     request<{ success: boolean }>("/notebooks/reorder/batch", { method: "PUT", body: JSON.stringify({ items }) }),
+  moveNotebook: (id: string, data: { parentId?: string | null; sortOrder?: number }) =>
+    request<Notebook>(`/notebooks/${id}/move`, { method: "PUT", body: JSON.stringify(data) }),
 
   // Notes
   getNotes: (params?: Record<string, string>) => {
@@ -114,10 +116,14 @@ export const api = {
 
   // Export / Import
   getExportNotes: () => request<any[]>("/export/notes"),
-  importNotes: (notes: { title: string; content: string; contentText: string; createdAt?: string; updatedAt?: string }[], notebookId?: string) =>
-    request<{ success: boolean; count: number; notebookId: string; notes: any[] }>("/export/import", {
+  importNotes: (
+    notes: { title: string; content: string; contentText: string; createdAt?: string; updatedAt?: string; notebookName?: string; notebookPath?: string[] }[],
+    notebookId?: string,
+    notebookName?: string,
+  ) =>
+    request<{ success: boolean; count: number; notebookId: string; notebookIds?: string[]; notes: any[] }>("/export/import", {
       method: "POST",
-      body: JSON.stringify({ notes, notebookId }),
+      body: JSON.stringify({ notes, notebookId, notebookName }),
     }),
 
   // Site Settings
@@ -228,6 +234,8 @@ export const api = {
     request<NoteVersion>(`/shares/note/${noteId}/versions/${versionId}`),
   restoreNoteVersion: (noteId: string, versionId: string) =>
     request<Note>(`/shares/note/${noteId}/versions/${versionId}/restore`, { method: "POST" }),
+  clearNoteVersions: (noteId: string) =>
+    request<{ success: boolean; count: number }>(`/shares/note/${noteId}/versions`, { method: "DELETE" }),
 
   // 评论批注
   getNoteComments: (noteId: string) => request<ShareComment[]>(`/shares/note/${noteId}/comments`),

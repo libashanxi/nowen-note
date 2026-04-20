@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from "react";
+import React, { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, X, ListTree, Lock, Unlock, Tag as TagIcon, Type, MoreHorizontal, Share2, History, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import TiptapEditor, { HeadingItem } from "@/components/TiptapEditor";
 import { useApp, useAppActions, SyncStatus } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { Tag } from "@/types";
+import { Tag, Notebook } from "@/types";
 import { useTranslation } from "react-i18next";
 import { haptic } from "@/hooks/useCapacitor";
 import ShareModal from "@/components/ShareModal";
@@ -152,9 +152,12 @@ export default function EditorPane() {
   const moveToTrash = useCallback(async () => {
     if (!activeNote || activeNote.isLocked) return;
     haptic.heavy();
-    await api.updateNote(activeNote.id, { isTrashed: 1 } as any);
+    const noteId = activeNote.id;
     actions.setActiveNote(null);
-    actions.refreshNotebooks();
+    actions.removeNoteFromList(noteId);
+    api.updateNote(noteId, { isTrashed: 1 } as any)
+      .then(() => actions.refreshNotebooks())
+      .catch(console.error);
   }, [activeNote, actions]);
 
   const handleTagsChange = useCallback((tags: Tag[]) => {
@@ -221,6 +224,14 @@ export default function EditorPane() {
     setShowMoveDropdown(false);
     actions.refreshNotebooks();
   }, [activeNote, actions]);
+
+  // 构建与左侧侧边栏完全一致的笔记本树
+  const notebookTree = useMemo(() => buildTree(state.notebooks), [state.notebooks]);
+  // 当前笔记所属笔记本的完整路径（面包屑）
+  const currentPath = useMemo(
+    () => findPathById(state.notebooks, activeNote?.notebookId),
+    [state.notebooks, activeNote?.notebookId]
+  );
 
   if (!activeNote) {
     return (
@@ -315,29 +326,19 @@ export default function EditorPane() {
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden border-t border-b border-app-border bg-app-bg/50"
                       >
-                        <div className="max-h-40 overflow-auto py-1">
-                          {state.notebooks.map((nb) => (
-                            <button
+                        <div className="max-h-56 overflow-auto py-1 px-1">
+                          {notebookTree.map((nb) => (
+                            <MoveTreeItem
                               key={nb.id}
-                              disabled={nb.id === activeNote.notebookId}
-                              onClick={() => {
-                                handleMoveToNotebook(nb.id);
+                              notebook={nb}
+                              depth={0}
+                              currentId={activeNote.notebookId}
+                              onSelect={(id) => {
+                                handleMoveToNotebook(id);
                                 setShowMobileMenu(false);
                                 setShowMobileMoveMenu(false);
                               }}
-                              className={cn(
-                                "w-full flex items-center gap-2 px-5 py-2 text-sm transition-colors",
-                                nb.id === activeNote.notebookId
-                                  ? "opacity-40 cursor-not-allowed text-tx-tertiary"
-                                  : "text-tx-secondary active:bg-app-hover"
-                              )}
-                            >
-                              <span>{nb.icon || "📁"}</span>
-                              <span className="truncate">{nb.name}</span>
-                              {nb.id === activeNote.notebookId && (
-                                <span className="ml-auto text-[10px] text-tx-tertiary">{t('common.current')}</span>
-                              )}
-                            </button>
+                            />
                           ))}
                         </div>
                       </motion.div>
@@ -500,45 +501,51 @@ export default function EditorPane() {
         <div className="relative">
           <button
             onClick={() => setShowMoveDropdown(!showMoveDropdown)}
-            className="flex items-center gap-1.5 text-xs text-tx-tertiary hover:text-tx-secondary transition-colors rounded-md px-1.5 py-1 hover:bg-app-hover"
+            className="flex items-center gap-1 text-xs text-tx-tertiary hover:text-tx-secondary transition-colors rounded-md px-1.5 py-1 hover:bg-app-hover max-w-[520px]"
             title={t('editor.moveToNotebook')}
           >
-            <span>
-              {state.notebooks.find((n) => n.id === activeNote.notebookId)?.icon}{" "}
-              {state.notebooks.find((n) => n.id === activeNote.notebookId)?.name}
-            </span>
-            <ChevronDown size={12} />
+            {currentPath.length > 0 ? (
+              <span className="flex items-center gap-1 min-w-0">
+                {currentPath.map((nb, idx) => (
+                  <React.Fragment key={nb.id}>
+                    {idx > 0 && <ChevronRight size={11} className="text-tx-tertiary/60 shrink-0" />}
+                    <span className={cn(
+                      "flex items-center gap-1 shrink-0 truncate",
+                      idx === currentPath.length - 1 && "text-tx-secondary font-medium"
+                    )}>
+                      <span>{nb.icon || "📁"}</span>
+                      <span className="truncate max-w-[120px]">{nb.name}</span>
+                    </span>
+                  </React.Fragment>
+                ))}
+              </span>
+            ) : (
+              <span>—</span>
+            )}
+            <ChevronDown size={12} className="shrink-0 ml-0.5" />
           </button>
           {showMoveDropdown && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowMoveDropdown(false)} />
               <div
                 ref={moveDropdownRef}
-                className="absolute top-full left-0 mt-1 w-56 bg-app-elevated border border-app-border rounded-lg shadow-xl z-50 py-1 max-h-64 overflow-auto"
+                className="absolute top-full left-0 mt-1 w-64 bg-app-elevated border border-app-border rounded-lg shadow-xl z-50 py-1 max-h-80 overflow-auto"
                 style={{ animation: "contextMenuIn 0.12s ease-out" }}
               >
                 <div className="px-3 py-1.5 text-[10px] font-medium text-tx-tertiary border-b border-app-border mb-1">
                   {t('editor.moveToLabel')}
                 </div>
-                {state.notebooks.map((nb) => (
-                  <button
-                    key={nb.id}
-                    disabled={nb.id === activeNote.notebookId}
-                    onClick={() => handleMoveToNotebook(nb.id)}
-                    className={cn(
-                      "w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors",
-                      nb.id === activeNote.notebookId
-                        ? "opacity-40 cursor-not-allowed text-tx-tertiary"
-                        : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
-                    )}
-                  >
-                    <span>{nb.icon || "📁"}</span>
-                    <span className="truncate">{nb.name}</span>
-                    {nb.id === activeNote.notebookId && (
-                      <span className="ml-auto text-[10px] text-tx-tertiary">{t('common.current')}</span>
-                    )}
-                  </button>
-                ))}
+                <div className="px-1 pb-1">
+                  {notebookTree.map((nb) => (
+                    <MoveTreeItem
+                      key={nb.id}
+                      notebook={nb}
+                      depth={0}
+                      currentId={activeNote.notebookId}
+                      onSelect={handleMoveToNotebook}
+                    />
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -809,6 +816,106 @@ function OutlinePanel({
           )}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+/* ===== 笔记本树构建（与 Sidebar.tsx 的 buildTree 完全一致） ===== */
+function buildTree(notebooks: Notebook[]): Notebook[] {
+  const map = new Map<string, Notebook>();
+  const roots: Notebook[] = [];
+  notebooks.forEach((nb) => map.set(nb.id, { ...nb, children: [] }));
+  notebooks.forEach((nb) => {
+    const node = map.get(nb.id)!;
+    if (nb.parentId && map.has(nb.parentId)) {
+      map.get(nb.parentId)!.children!.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+  return roots;
+}
+
+/* 从根到指定 id 的完整路径（含自身），用于面包屑展示 */
+function findPathById(notebooks: Notebook[], id: string | null | undefined): Notebook[] {
+  if (!id) return [];
+  const byId = new Map(notebooks.map((n) => [n.id, n]));
+  const path: Notebook[] = [];
+  let cursor: string | null | undefined = id;
+  const visited = new Set<string>();
+  while (cursor) {
+    if (visited.has(cursor)) break;
+    visited.add(cursor);
+    const nb = byId.get(cursor);
+    if (!nb) break;
+    path.unshift(nb);
+    cursor = nb.parentId ?? null;
+  }
+  return path;
+}
+
+/* ===== 编辑器顶部"移动笔记本"树形条目（与侧边栏目录结构保持一致） ===== */
+function MoveTreeItem({
+  notebook, depth, currentId, onSelect,
+}: {
+  notebook: Notebook;
+  depth: number;
+  currentId: string;
+  onSelect: (id: string) => void;
+}) {
+  const hasChildren = !!notebook.children && notebook.children.length > 0;
+  // 默认展开：若自身或子孙中包含当前笔记，则展开；否则折叠
+  const containsCurrent = useMemo(() => {
+    const stack: Notebook[] = [notebook];
+    while (stack.length) {
+      const n = stack.pop()!;
+      if (n.id === currentId) return true;
+      if (n.children) stack.push(...n.children);
+    }
+    return false;
+  }, [notebook, currentId]);
+  const [expanded, setExpanded] = useState(containsCurrent || depth === 0);
+  const isCurrent = notebook.id === currentId;
+  const { t } = useTranslation();
+
+  return (
+    <div>
+      <button
+        disabled={isCurrent}
+        onClick={() => !isCurrent && onSelect(notebook.id)}
+        className={cn(
+          "w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors",
+          isCurrent
+            ? "opacity-40 cursor-not-allowed text-tx-tertiary"
+            : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+        )}
+        style={{ paddingLeft: `${depth * 14 + 8}px` }}
+      >
+        {hasChildren ? (
+          <span
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="w-4 h-4 flex items-center justify-center shrink-0 cursor-pointer hover:text-tx-primary"
+          >
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+        ) : (
+          <span className="w-4 h-4 shrink-0" />
+        )}
+        <span className="text-base shrink-0">{notebook.icon || "📁"}</span>
+        <span className="truncate flex-1 text-left">{notebook.name}</span>
+        {isCurrent && (
+          <span className="ml-auto text-[10px] text-tx-tertiary shrink-0">{t('common.current')}</span>
+        )}
+      </button>
+      {hasChildren && expanded && notebook.children!.map((child) => (
+        <MoveTreeItem
+          key={child.id}
+          notebook={child}
+          depth={depth + 1}
+          currentId={currentId}
+          onSelect={onSelect}
+        />
+      ))}
     </div>
   );
 }

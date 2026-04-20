@@ -16,6 +16,7 @@ import { AppProvider, useApp, useAppActions, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDT
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { SiteSettingsProvider, useSiteSettings } from "@/hooks/useSiteSettings";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import Toaster from "@/components/Toaster";
 import { User } from "@/types";
 import { getServerUrl, clearServerUrl } from "@/lib/api";
 import { useBackButton, hideSplashScreen, useStatusBarSync, useKeyboardLayout, isNativePlatform } from "@/hooks/useCapacitor";
@@ -217,9 +218,18 @@ function AppLayout() {
     const handleKeyDown = async (e: KeyboardEvent) => {
       if (e.altKey && e.key.toLowerCase() === "n") {
         e.preventDefault();
+        const { toast } = await import("@/lib/toast");
+        // 无笔记本时给出提示
+        if (state.notebooks.length === 0) {
+          toast.warning(t('common.needNotebookFirst'));
+          return;
+        }
         // 优先使用当前选中的笔记本，否则取第一个笔记本
         const notebookId = state.selectedNotebookId || state.notebooks[0]?.id;
-        if (!notebookId) return;
+        if (!notebookId) {
+          toast.warning(t('common.needNotebookFirst'));
+          return;
+        }
         try {
           const { api } = await import("@/lib/api");
           const note = await api.createNote({ notebookId, title: t('common.untitledNote') });
@@ -228,8 +238,9 @@ function AppLayout() {
           actions.setViewMode("notebook");
           actions.setMobileView("editor");
           actions.refreshNotebooks();
-        } catch (err) {
+        } catch (err: any) {
           console.error("Quick create note failed:", err);
+          toast.error(err?.message || t('noteList.createFailed'));
         }
       }
     };
@@ -469,6 +480,7 @@ function App() {
     return (
       <ThemeProvider>
         <SharedNoteView shareToken={shareMatch[1]} />
+        <Toaster />
       </ThemeProvider>
     );
   }
@@ -477,6 +489,7 @@ function App() {
     <ThemeProvider>
       <SiteSettingsProvider>
         <AuthGate />
+        <Toaster />
       </SiteSettingsProvider>
     </ThemeProvider>
   );

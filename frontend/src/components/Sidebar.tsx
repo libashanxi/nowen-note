@@ -4,7 +4,8 @@ import {
   BookOpen, Plus, Star, Trash2, Search, ChevronRight,
   ChevronDown, Hash, PanelLeftClose, PanelLeft, ListTodo,
   Settings, LogOut, FilePlus, FolderPlus, Edit2, X, BrainCircuit,
-  FileSpreadsheet, Bot, CalendarDays, Smile, Workflow, GripVertical
+  FileSpreadsheet, Bot, CalendarDays, Smile, Workflow, GripVertical,
+  FolderInput, Check, Folder, Home
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +20,7 @@ import { api } from "@/lib/api";
 import { Notebook, ViewMode } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+import { toast } from "@/lib/toast";
 
 /* ===== Emoji 图标选择器 ===== */
 const EMOJI_GROUPS = [
@@ -174,11 +176,199 @@ function buildTree(notebooks: Notebook[]): Notebook[] {
   return roots;
 }
 
+/* ===== 移动笔记本：树形选择器条目 ===== */
+function NotebookMoveTreeItem({
+  notebook, depth, selectedId, disabledIds, currentParentId, onSelect,
+}: {
+  notebook: Notebook; depth: number;
+  selectedId: string | null;
+  disabledIds: Set<string>;          // 自身及子孙（禁用）
+  currentParentId: string | null;    // 当前父级（显示"当前"标记）
+  onSelect: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const { t } = useTranslation();
+  const hasChildren = !!notebook.children && notebook.children.length > 0;
+  const isDisabled = disabledIds.has(notebook.id);
+  const isSelected = selectedId === notebook.id;
+  const isCurrent = currentParentId === notebook.id;
+
+  return (
+    <div>
+      <button
+        onClick={() => !isDisabled && onSelect(notebook.id)}
+        disabled={isDisabled}
+        className={cn(
+          "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors",
+          isDisabled
+            ? "opacity-40 cursor-not-allowed text-tx-tertiary"
+            : isSelected
+            ? "bg-accent-primary/10 text-accent-primary"
+            : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+        )}
+        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+      >
+        {hasChildren ? (
+          <span
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="w-4 h-4 flex items-center justify-center shrink-0 cursor-pointer"
+          >
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
+        ) : (
+          <span className="w-4 h-4 shrink-0" />
+        )}
+        <span className="text-base shrink-0">{notebook.icon || "📒"}</span>
+        <span className="truncate flex-1 text-left">{notebook.name}</span>
+        {isCurrent && <span className="text-[10px] text-tx-tertiary shrink-0">{t('common.current')}</span>}
+        {isSelected && <Check size={14} className="text-accent-primary shrink-0" />}
+      </button>
+      {hasChildren && expanded && notebook.children!.map((child) => (
+        <NotebookMoveTreeItem
+          key={child.id}
+          notebook={child}
+          depth={depth + 1}
+          selectedId={selectedId}
+          disabledIds={disabledIds}
+          currentParentId={currentParentId}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MoveNotebookModal({
+  isOpen, notebook, allNotebooks, onMove, onClose,
+}: {
+  isOpen: boolean;
+  notebook: Notebook | null;
+  allNotebooks: Notebook[];
+  onMove: (newParentId: string | null) => void;
+  onClose: () => void;
+}) {
+  // selectedId: null → 未选择；"__ROOT__" → 根级；其他 → 目标父 id
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    if (isOpen) setSelectedId(null);
+  }, [isOpen, notebook?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !notebook) return null;
+
+  // 计算自身及所有后代 id（禁用）
+  const disabledIds = new Set<string>();
+  const collect = (id: string) => {
+    disabledIds.add(id);
+    for (const nb of allNotebooks) {
+      if (nb.parentId === id) collect(nb.id);
+    }
+  };
+  collect(notebook.id);
+
+  const tree = buildTree(allNotebooks);
+  const currentParentId = notebook.parentId ?? null;
+  // 有效选中目标（包含 root）
+  const selectedTarget: string | null | undefined =
+    selectedId === "__ROOT__" ? null : selectedId;
+  const isChanged =
+    selectedId !== null &&
+    (selectedTarget ?? null) !== currentParentId;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="relative w-full max-w-[360px] mx-4 max-h-[480px] bg-app-elevated border border-app-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ animation: "contextMenuIn 0.15s ease-out" }}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-app-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <FolderInput size={16} className="text-accent-primary shrink-0" />
+            <span className="text-sm font-medium text-tx-primary truncate">
+              {t('sidebar.moveNotebookTitle')}
+            </span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-app-hover text-tx-tertiary">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 py-2 text-xs text-tx-tertiary truncate border-b border-app-border">
+          {notebook.icon} {notebook.name}
+        </div>
+        <ScrollArea className="flex-1 max-h-[300px]">
+          <div className="p-2">
+            {/* 根级选项 */}
+            <button
+              onClick={() => setSelectedId("__ROOT__")}
+              disabled={currentParentId === null}
+              className={cn(
+                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors",
+                currentParentId === null
+                  ? "opacity-40 cursor-not-allowed text-tx-tertiary"
+                  : selectedId === "__ROOT__"
+                  ? "bg-accent-primary/10 text-accent-primary"
+                  : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
+              )}
+            >
+              <span className="w-4 h-4 shrink-0" />
+              <Home size={14} className="shrink-0" />
+              <span className="truncate flex-1 text-left">{t('sidebar.moveToRoot')}</span>
+              {currentParentId === null && (
+                <span className="text-[10px] text-tx-tertiary shrink-0">{t('common.current')}</span>
+              )}
+              {selectedId === "__ROOT__" && <Check size={14} className="text-accent-primary shrink-0" />}
+            </button>
+            <div className="my-1 border-t border-app-border/50" />
+            {tree.map((nb) => (
+              <NotebookMoveTreeItem
+                key={nb.id}
+                notebook={nb}
+                depth={0}
+                selectedId={selectedId}
+                disabledIds={disabledIds}
+                currentParentId={currentParentId}
+                onSelect={setSelectedId}
+              />
+            ))}
+            {tree.length === 0 && (
+              <p className="text-xs text-tx-tertiary text-center py-4">{/* 无数据 */}</p>
+            )}
+          </div>
+        </ScrollArea>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-app-border">
+          <Button variant="ghost" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button
+            size="sm"
+            disabled={!isChanged}
+            onClick={() => onMove(selectedTarget ?? null)}
+            className="bg-accent-primary text-white hover:bg-accent-primary/90 disabled:opacity-40"
+          >
+            {t('common.confirm')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
 function NotebookItem({
   notebook, depth, onSelect, selectedId, onToggle, onContextMenu,
   editingId, editValue, onEditChange, onEditSubmit, onEditCancel,
   onIconChange,
-  draggable, onDragStart, onDragOver, onDragEnd, onDrop, dragOverId,
+  draggable, onDragStart, onDragOver, onDragEnd, onDrop, dragOverId, dragOverZone,
 }: {
   notebook: Notebook; depth: number; onSelect: (id: string) => void;
   selectedId: string | null; onToggle: (id: string) => void;
@@ -192,6 +382,7 @@ function NotebookItem({
   onDragEnd?: () => void;
   onDrop?: (e: React.DragEvent, id: string) => void;
   dragOverId?: string | null;
+  dragOverZone?: "before" | "inside" | null;
 }) {
   const { t } = useTranslation();
   const isSelected = selectedId === notebook.id;
@@ -199,6 +390,8 @@ function NotebookItem({
   const isExpanded = notebook.isExpanded === 1;
   const isEditing = editingId === notebook.id;
   const isDragOver = dragOverId === notebook.id;
+  const showBeforeIndicator = isDragOver && dragOverZone === "before";
+  const showInsideIndicator = isDragOver && dragOverZone === "inside";
   const inputRef = useRef<HTMLInputElement>(null);
   const iconRef = useRef<HTMLButtonElement>(null);
   const [showIconPicker, setShowIconPicker] = useState(false);
@@ -220,13 +413,20 @@ function NotebookItem({
 
   return (
     <>
+      {/* 拖拽"排序到之前"的蓝线指示器 */}
+      {showBeforeIndicator && (
+        <div
+          className="h-0.5 bg-accent-primary rounded-full mx-2 my-0.5 pointer-events-none"
+          style={{ marginLeft: `${depth * 16 + 16}px` }}
+        />
+      )}
       <motion.div
         initial={{ opacity: 0, x: -8 }}
         animate={{ opacity: 1, x: 0 }}
         className={cn(
           "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm group transition-colors",
           isSelected ? "bg-app-active text-tx-primary" : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
-          isDragOver && "border border-accent-primary/50 bg-accent-primary/5"
+          showInsideIndicator && "ring-2 ring-accent-primary/70 bg-accent-primary/10"
         )}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
         onClick={() => onSelect(notebook.id)}
@@ -319,6 +519,7 @@ function NotebookItem({
                 onDragEnd={onDragEnd}
                 onDrop={onDrop}
                 dragOverId={dragOverId}
+                dragOverZone={dragOverZone}
               />
             ))}
           </motion.div>
@@ -381,6 +582,7 @@ export default function Sidebar() {
     { id: "sep1", label: "", separator: true },
     { id: "change_icon", label: t('sidebar.changeIcon'), icon: <Smile size={14} /> },
     { id: "rename", label: t('common.rename'), icon: <Edit2 size={14} /> },
+    { id: "move", label: t('sidebar.moveNotebook'), icon: <FolderInput size={14} /> },
     { id: "sep2", label: "", separator: true },
     { id: "delete", label: t('sidebar.deleteNotebook'), icon: <Trash2 size={14} />, danger: true },
   ];
@@ -398,9 +600,18 @@ export default function Sidebar() {
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<Notebook | null>(null);
 
+  // 清空回收站确认
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
+  const [emptyingTrash, setEmptyingTrash] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
+
+  // 移动笔记本模态框
+  const [moveNbTarget, setMoveNbTarget] = useState<Notebook | null>(null);
+
   // 笔记本拖拽排序状态
   const [dragNbId, setDragNbId] = useState<string | null>(null);
   const [dragOverNbId, setDragOverNbId] = useState<string | null>(null);
+  const [dragOverNbZone, setDragOverNbZone] = useState<"before" | "inside" | null>(null);
 
   const tree = useMemo(() => buildTree(state.notebooks), [state.notebooks]);
 
@@ -417,7 +628,23 @@ export default function Sidebar() {
     );
   }, [state.notebooks, actions]);
 
-  // 笔记本拖拽排序处理
+  // 判断 candidateId 是否为 sourceId 的后代（用于循环引用防护）
+  const isDescendant = useCallback((sourceId: string, candidateId: string): boolean => {
+    if (sourceId === candidateId) return true;
+    // 从 candidate 向上溯源，若链路包含 sourceId 则 candidate 是 source 的后代
+    let cursor: string | null = candidateId;
+    const visited = new Set<string>();
+    while (cursor) {
+      if (visited.has(cursor)) return false;
+      visited.add(cursor);
+      if (cursor === sourceId) return true;
+      const parent = state.notebooks.find((n) => n.id === cursor)?.parentId ?? null;
+      cursor = parent;
+    }
+    return false;
+  }, [state.notebooks]);
+
+  // 笔记本拖拽：按鼠标垂直位置区分"before"（同级排到之前）与"inside"（设为子项）
   const handleNbDragStart = useCallback((e: React.DragEvent, id: string) => {
     setDragNbId(id);
     e.dataTransfer.effectAllowed = "move";
@@ -427,39 +654,109 @@ export default function Sidebar() {
   const handleNbDragOver = useCallback((e: React.DragEvent, id: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    if (id !== dragNbId) setDragOverNbId(id);
-  }, [dragNbId]);
+    if (id === dragNbId) {
+      setDragOverNbId(null);
+      setDragOverNbZone(null);
+      return;
+    }
+    // 不允许放入自身的后代
+    if (dragNbId && isDescendant(dragNbId, id)) {
+      e.dataTransfer.dropEffect = "none";
+      setDragOverNbId(null);
+      setDragOverNbZone(null);
+      return;
+    }
+    // 根据鼠标在目标元素内的纵向位置划分区域：
+    //   上 1/4 → before（同级排到目标之前）
+    //   下 3/4 → inside（成为该笔记本的子项）
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const offset = e.clientY - rect.top;
+    const zone: "before" | "inside" = offset < rect.height * 0.25 ? "before" : "inside";
+    setDragOverNbId(id);
+    setDragOverNbZone(zone);
+  }, [dragNbId, isDescendant]);
 
   const handleNbDragEnd = useCallback(() => {
     setDragNbId(null);
     setDragOverNbId(null);
+    setDragOverNbZone(null);
   }, []);
 
   const handleNbDrop = useCallback(async (e: React.DragEvent, targetId: string) => {
     e.preventDefault();
     const sourceId = dragNbId;
+    const zone = dragOverNbZone;
     setDragNbId(null);
     setDragOverNbId(null);
-    if (!sourceId || sourceId === targetId) return;
+    setDragOverNbZone(null);
+    if (!sourceId || sourceId === targetId || !zone) return;
+    if (isDescendant(sourceId, targetId)) return;
 
-    // 只对同级笔记本进行排序（简化处理）
-    const currentList = [...state.notebooks];
-    const sourceIdx = currentList.findIndex((n) => n.id === sourceId);
-    const targetIdx = currentList.findIndex((n) => n.id === targetId);
-    if (sourceIdx === -1 || targetIdx === -1) return;
+    const sourceNb = state.notebooks.find((n) => n.id === sourceId);
+    const targetNb = state.notebooks.find((n) => n.id === targetId);
+    if (!sourceNb || !targetNb) return;
 
-    const [moved] = currentList.splice(sourceIdx, 1);
-    currentList.splice(targetIdx, 0, moved);
-    actions.setNotebooks(currentList);
+    if (zone === "inside") {
+      // 放进 target 作为子项：父级改为 targetId
+      if (sourceNb.parentId === targetId) return;
+      // 乐观更新
+      actions.setNotebooks(
+        state.notebooks.map((n) =>
+          n.id === sourceId ? { ...n, parentId: targetId } : n.id === targetId ? { ...n, isExpanded: 1 } : n
+        )
+      );
+      try {
+        await api.moveNotebook(sourceId, { parentId: targetId });
+        // 展开父级
+        if (targetNb.isExpanded !== 1) {
+          api.updateNotebook(targetId, { isExpanded: 1 } as any).catch(console.error);
+        }
+      } catch (err) {
+        console.error("Failed to move notebook:", err);
+        actions.refreshNotebooks();
+      }
+    } else {
+      // before：将 source 移到 target 的同级（父级 = target.parentId），并排到 target 之前
+      const newParentId = targetNb.parentId ?? null;
+      const changedParent = sourceNb.parentId !== newParentId;
 
-    const items = currentList.map((n, i) => ({ id: n.id, sortOrder: i }));
-    try {
-      await api.reorderNotebooks(items);
-    } catch (err) {
-      console.error("Failed to reorder notebooks:", err);
-      actions.refreshNotebooks();
+      // 重新计算同级列表（target 所在的父级下的所有笔记本，按 sortOrder）
+      const siblings = state.notebooks
+        .filter((n) => (n.parentId ?? null) === newParentId && n.id !== sourceId)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      const targetIdx = siblings.findIndex((n) => n.id === targetId);
+      if (targetIdx === -1) return;
+
+      const newOrder = [...siblings];
+      newOrder.splice(targetIdx, 0, { ...sourceNb, parentId: newParentId });
+
+      // 乐观更新状态
+      const updatedMap = new Map(newOrder.map((n, i) => [n.id, i]));
+      actions.setNotebooks(
+        state.notebooks.map((n) => {
+          if (n.id === sourceId) {
+            return { ...n, parentId: newParentId, sortOrder: updatedMap.get(n.id) ?? n.sortOrder };
+          }
+          if (updatedMap.has(n.id)) {
+            return { ...n, sortOrder: updatedMap.get(n.id)! };
+          }
+          return n;
+        })
+      );
+
+      try {
+        // 如果父级变化，先调用 move 接口（允许 parentId 为 null）
+        if (changedParent) {
+          await api.moveNotebook(sourceId, { parentId: newParentId });
+        }
+        // 然后批量更新同级 sortOrder
+        await api.reorderNotebooks(newOrder.map((n, i) => ({ id: n.id, sortOrder: i })));
+      } catch (err) {
+        console.error("Failed to move/reorder notebook:", err);
+        actions.refreshNotebooks();
+      }
     }
-  }, [dragNbId, state.notebooks, actions]);
+  }, [dragNbId, dragOverNbZone, isDescendant, state.notebooks, actions]);
 
   const handleNotebookSelect = (id: string) => {
     actions.setSelectedNotebook(id);
@@ -499,6 +796,22 @@ export default function Sidebar() {
         actions.setActiveNote(note);
         actions.setSelectedNotebook(targetId);
         actions.setViewMode("notebook");
+        actions.addNoteToList({
+          id: note.id,
+          userId: note.userId,
+          title: note.title,
+          contentText: note.contentText || "",
+          notebookId: note.notebookId,
+          isPinned: note.isPinned || 0,
+          isFavorite: note.isFavorite || 0,
+          isLocked: note.isLocked || 0,
+          isArchived: note.isArchived || 0,
+          isTrashed: note.isTrashed || 0,
+          version: note.version || 1,
+          sortOrder: note.sortOrder || 0,
+          updatedAt: note.updatedAt,
+          createdAt: note.createdAt,
+        } as any);
         actions.refreshNotebooks();
         break;
       }
@@ -525,6 +838,12 @@ export default function Sidebar() {
       }
       case "change_icon": {
         setIconPickerId(targetId);
+        break;
+      }
+      case "move": {
+        if (targetNb) {
+          setMoveNbTarget(targetNb);
+        }
         break;
       }
       case "delete": {
@@ -556,16 +875,114 @@ export default function Sidebar() {
     setEditingId(null);
   };
 
+  // 执行笔记本移动（右键菜单 → 移动至... 的结果）
+  const handleMoveNotebookConfirm = async (newParentId: string | null) => {
+    if (!moveNbTarget) return;
+    const sourceId = moveNbTarget.id;
+    // 循环引用防护
+    if (newParentId && isDescendant(sourceId, newParentId)) {
+      alert(t('sidebar.moveCannotSelf'));
+      return;
+    }
+    // 无变化直接关闭
+    const currentParent = moveNbTarget.parentId ?? null;
+    if (currentParent === newParentId) {
+      setMoveNbTarget(null);
+      return;
+    }
+    // 乐观更新
+    actions.setNotebooks(
+      state.notebooks.map((n) =>
+        n.id === sourceId
+          ? { ...n, parentId: newParentId }
+          : n.id === newParentId
+          ? { ...n, isExpanded: 1 }
+          : n
+      )
+    );
+    try {
+      await api.moveNotebook(sourceId, { parentId: newParentId });
+      if (newParentId) {
+        // 展开新父级
+        const parentNb = state.notebooks.find((n) => n.id === newParentId);
+        if (parentNb && parentNb.isExpanded !== 1) {
+          api.updateNotebook(newParentId, { isExpanded: 1 } as any).catch(console.error);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to move notebook:", err);
+      alert(t('sidebar.moveFailed'));
+      actions.refreshNotebooks();
+    }
+    setMoveNbTarget(null);
+  };
+
   // 删除笔记本
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
     await api.deleteNotebook(deleteTarget.id).catch(console.error);
-    actions.setNotebooks(state.notebooks.filter((nb) => nb.id !== deleteTarget.id));
-    if (state.selectedNotebookId === deleteTarget.id) {
+    // 递归收集被删除笔记本及其所有子孙笔记本的 ID
+    const idsToRemove = new Set<string>();
+    const collectChildren = (parentId: string) => {
+      idsToRemove.add(parentId);
+      for (const nb of state.notebooks) {
+        if (nb.parentId === parentId && !idsToRemove.has(nb.id)) {
+          collectChildren(nb.id);
+        }
+      }
+    };
+    collectChildren(deleteTarget.id);
+    actions.setNotebooks(state.notebooks.filter((nb) => !idsToRemove.has(nb.id)));
+    if (idsToRemove.has(state.selectedNotebookId || "")) {
       actions.setSelectedNotebook(null);
       actions.setViewMode("all");
     }
     setDeleteTarget(null);
+  };
+
+  // 打开清空回收站确认（先去查当前可清空的数量）
+  const openEmptyTrashConfirm = async () => {
+    try {
+      const notes = await api.getNotes({ isTrashed: "1" });
+      const removable = (notes as any[]).filter((n) => !n.isLocked).length;
+      if (removable === 0) {
+        toast.info(t('sidebar.emptyTrashEmpty'));
+        return;
+      }
+      setTrashCount(removable);
+      setEmptyTrashOpen(true);
+    } catch (err: any) {
+      console.error("获取回收站笔记失败:", err);
+      toast.error(err?.message || t('sidebar.emptyTrashFailed'));
+    }
+  };
+
+  const handleEmptyTrashConfirm = async () => {
+    if (emptyingTrash) return;
+    setEmptyingTrash(true);
+    try {
+      const res = await api.emptyTrash();
+      if (res.skipped && res.skipped > 0) {
+        toast.warning(t('sidebar.emptyTrashSkipped', { count: res.count, skipped: res.skipped }));
+      } else {
+        toast.success(t('sidebar.emptyTrashSuccess', { count: res.count }));
+      }
+      // 若当前正处于回收站视图，刷新列表
+      if (state.viewMode === "trash") {
+        actions.setNotes([]);
+      }
+      // 清空 activeNote 以防止指向已删除笔记
+      if (state.activeNote?.isTrashed) {
+        actions.setActiveNote(null);
+      }
+      actions.refreshNotebooks();
+      setEmptyTrashOpen(false);
+    } catch (err: any) {
+      console.error("清空回收站失败:", err);
+      toast.error(err?.message || t('sidebar.emptyTrashFailed'));
+    } finally {
+      setEmptyingTrash(false);
+    }
   };
 
   const navItems: { icon: React.ReactNode; label: string; mode: ViewMode; active: boolean }[] = [
@@ -632,25 +1049,50 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <div className="px-3 py-1 space-y-0.5">
-        {navItems.map((item) => (
-          <button
-            key={item.mode}
-            onClick={() => {
-              actions.setViewMode(item.mode);
-              actions.setSelectedNotebook(null);
-              actions.setMobileSidebar(false);
-            }}
-            className={cn(
-              "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-sm transition-colors",
-              item.active
-                ? "bg-app-active text-tx-primary"
-                : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary"
-            )}
-          >
-            {item.icon}
-            {item.label}
-          </button>
-        ))}
+        {navItems.map((item) => {
+          const isTrashItem = item.mode === "trash";
+          return (
+            <div key={item.mode} className="relative group">
+              <button
+                onClick={() => {
+                  actions.setViewMode(item.mode);
+                  actions.setSelectedNotebook(null);
+                  actions.setMobileSidebar(false);
+                }}
+                onContextMenu={
+                  isTrashItem
+                    ? (e) => {
+                        e.preventDefault();
+                        openEmptyTrashConfirm();
+                      }
+                    : undefined
+                }
+                className={cn(
+                  "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-sm transition-colors",
+                  item.active
+                    ? "bg-app-active text-tx-primary"
+                    : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
+                  isTrashItem && "pr-8"
+                )}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+              {isTrashItem && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openEmptyTrashConfirm();
+                  }}
+                  title={t('sidebar.emptyTrash')}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-tx-tertiary hover:text-red-500 transition-all"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Separator */}
@@ -683,9 +1125,9 @@ export default function Sidebar() {
             animate={{ height: "auto", opacity: 1, overflow: "visible", transitionEnd: { overflow: "visible" } }}
             exit={{ height: 0, opacity: 0, overflow: "hidden" }}
             transition={{ duration: 0.2 }}
-            className="flex-1 min-h-0"
+            className="flex-1 min-h-0 flex flex-col"
           >
-      <ScrollArea className="flex-1 px-1">
+      <ScrollArea className="flex-1 min-h-0 px-1">
         <div className="space-y-0.5 pb-2">
           {tree.map((nb) => (
             <NotebookItem
@@ -708,6 +1150,7 @@ export default function Sidebar() {
               onDragEnd={handleNbDragEnd}
               onDrop={handleNbDrop}
               dragOverId={dragOverNbId}
+              dragOverZone={dragOverNbZone}
             />
           ))}
         </div>
@@ -716,8 +1159,8 @@ export default function Sidebar() {
         )}
       </AnimatePresence>
 
-      {/* Tags */}
-      <div className="border-t border-app-border">
+      {/* Tags —— 使用 shrink-0 + 内部 max-height + scroll，避免在小屏（如 1366x768）挤压上方 Notebooks 或与 Footer 交叠 */}
+      <div className="border-t border-app-border shrink-0">
         <button
           onClick={() => toggleTagsExpanded()}
           className="w-full flex items-center justify-between px-3 py-2 hover:bg-app-hover transition-colors"
@@ -735,11 +1178,16 @@ export default function Sidebar() {
           {tagsExpanded && (
             <motion.div
               initial={{ height: 0, opacity: 0, overflow: "hidden" }}
-              animate={{ height: "auto", opacity: 1, overflow: "visible", transitionEnd: { overflow: "visible" } }}
+              animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0, overflow: "hidden" }}
               transition={{ duration: 0.2 }}
+              style={{ overflow: "hidden" }}
             >
-              <div className="px-2 pb-2 space-y-0.5">
+              {/* 限制标签区最大高度，超出可滚动 —— 避免与 Notebooks / Footer 重叠 */}
+              <div
+                className="px-2 pb-2 space-y-0.5 overflow-y-auto"
+                style={{ maxHeight: "min(35vh, 260px)" }}
+              >
                 {state.tags.length === 0 ? (
                   <p className="text-[10px] text-tx-tertiary px-2 py-1">{t('sidebar.noTags')}</p>
                 ) : (
@@ -807,7 +1255,7 @@ export default function Sidebar() {
       </div>
 
       {/* Footer: Settings + Logout */}
-      <div className="border-t border-app-border px-3 py-2.5 flex items-center gap-2">
+      <div className="border-t border-app-border px-3 py-2.5 flex items-center gap-2 shrink-0">
         <button
           onClick={() => setShowSettings(true)}
           className="flex-1 flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm text-tx-secondary hover:text-tx-primary hover:bg-app-hover transition-colors group"
@@ -857,6 +1305,15 @@ export default function Sidebar() {
         )}
       </AnimatePresence>
 
+      {/* Move Notebook Modal */}
+      <MoveNotebookModal
+        isOpen={!!moveNbTarget}
+        notebook={moveNbTarget}
+        allNotebooks={state.notebooks}
+        onMove={handleMoveNotebookConfirm}
+        onClose={() => setMoveNbTarget(null)}
+      />
+
       {/* Delete Confirmation */}
       <AnimatePresence>
         {deleteTarget && (
@@ -900,6 +1357,57 @@ export default function Sidebar() {
                   className="px-4 py-2 text-sm font-medium text-white bg-accent-danger hover:bg-accent-danger/90 rounded-lg transition-colors"
                 >
                   {t('sidebar.confirmDelete')}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 清空回收站确认 */}
+      <AnimatePresence>
+        {emptyTrashOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => !emptyingTrash && setEmptyTrashOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ type: "spring", duration: 0.4, bounce: 0 }}
+              className="relative bg-app-elevated w-full max-w-sm p-5 rounded-xl shadow-2xl border border-app-border"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-accent-danger/10 flex items-center justify-center shrink-0">
+                  <Trash2 size={18} className="text-accent-danger" />
+                </div>
+                <h4 className="text-base font-bold text-tx-primary">
+                  {t('sidebar.emptyTrashConfirmTitle')}
+                </h4>
+              </div>
+              <p className="text-sm text-tx-secondary mb-5 pl-[52px]">
+                {t('sidebar.emptyTrashConfirm', { count: trashCount })}
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setEmptyTrashOpen(false)}
+                  disabled={emptyingTrash}
+                  className="px-4 py-2 text-sm text-tx-secondary hover:bg-app-hover rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleEmptyTrashConfirm}
+                  disabled={emptyingTrash}
+                  className="px-4 py-2 text-sm font-medium text-white bg-accent-danger hover:bg-accent-danger/90 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {emptyingTrash ? t('common.loading') : t('sidebar.emptyTrash')}
                 </button>
               </div>
             </motion.div>

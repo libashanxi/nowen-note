@@ -11,6 +11,7 @@ import { NoteListItem, Notebook } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
 import { haptic } from "@/hooks/useCapacitor";
+import { toast } from "@/lib/toast";
 
 function formatTime(dateStr: string, t: (key: string, opts?: any) => string) {
   const d = new Date(dateStr + "Z");
@@ -169,6 +170,83 @@ function MoveNoteModal({
             className="bg-accent-primary text-white hover:bg-accent-primary/90 disabled:opacity-40"
           >
             {t('noteList.moveButton')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===== 新建笔记时选择笔记本 ===== */
+function NotebookPickerModal({
+  isOpen, notebooks, onPick, onClose,
+}: {
+  isOpen: boolean; notebooks: Notebook[];
+  onPick: (notebookId: string) => void; onClose: () => void;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { t } = useTranslation();
+  const tree = buildNotebookTree(notebooks);
+
+  useEffect(() => {
+    if (isOpen) setSelectedId(null);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-[360px] mx-4 max-h-[480px] bg-app-elevated border border-app-border rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ animation: "contextMenuIn 0.15s ease-out" }}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-app-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <Folder size={16} className="text-accent-primary shrink-0" />
+            <span className="text-sm font-medium text-tx-primary truncate">{t('common.selectNotebook')}</span>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-app-hover text-tx-tertiary">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 py-2 text-xs text-tx-tertiary border-b border-app-border">
+          {t('common.selectNotebookHint')}
+        </div>
+        <ScrollArea className="flex-1 max-h-[300px]">
+          <div className="p-2">
+            {tree.map((nb) => (
+              <NotebookTreeItem
+                key={nb.id}
+                notebook={nb}
+                depth={0}
+                selectedId={selectedId}
+                currentNotebookId=""
+                onSelect={setSelectedId}
+              />
+            ))}
+            {tree.length === 0 && (
+              <p className="text-xs text-tx-tertiary text-center py-4">{t('noteList.noNotebooks')}</p>
+            )}
+          </div>
+        </ScrollArea>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-app-border">
+          <Button variant="ghost" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button
+            size="sm"
+            disabled={!selectedId}
+            onClick={() => selectedId && onPick(selectedId)}
+            className="bg-accent-primary text-white hover:bg-accent-primary/90 disabled:opacity-40"
+          >
+            {t('common.confirm')}
           </Button>
         </div>
       </div>
@@ -644,6 +722,7 @@ export default function NoteList() {
   const actions = useAppActions();
   const { menu, menuRef, openMenu, closeMenu } = useContextMenu();
   const [moveModal, setMoveModal] = useState<{ noteId: string; noteTitle: string; notebookId: string } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<string | null>(null); // YYYY-MM-DD
   const [showCalendar, setShowCalendar] = useState(false);
   const [sharedNoteIds, setSharedNoteIds] = useState<Set<string>>(new Set());
@@ -726,12 +805,71 @@ export default function NoteList() {
 
   const handleCreateNote = async () => {
     haptic.light();
-    const notebookId = state.selectedNotebookId || state.notebooks[0]?.id;
-    if (!notebookId) return;
-    const note = await api.createNote({ notebookId, title: t('common.untitledNote') });
-    actions.setActiveNote(note);
-    await fetchNotes();
-    actions.refreshNotebooks();
+    // 回收站视图禁止新建笔记
+    if (state.viewMode === "trash") {
+      toast.info(t('noteList.cannotCreateInTrash'));
+      return;
+    }
+    // 无笔记本时给出提示，无法创建
+    if (state.notebooks.length === 0) {
+      toast.warning(t('common.needNotebookFirst'));
+      return;
+    }
+
+    // 决策归属笔记本：
+    // 1. 当前已选中某个笔记本 -> 直接归属
+    // 2. 标签/收藏视图下，仅一个笔记本 -> 默认归属第一个并提示
+    // 3. 所有笔记视图下有多个笔记本 -> 弹出选择器
+    let notebookId = state.selectedNotebookId;
+
+    if (!notebookId) {
+      if (state.notebooks.length === 1) {
+        notebookId = state.notebooks[0].id;
+      } else {
+        // 多个笔记本，弹选择器让用户决定
+        setPickerOpen(true);
+        return;
+      }
+    }
+
+    await createNoteInNotebook(notebookId);
+  };
+
+  // 实际执行创建笔记的逻辑，抽出供选择器回调复用
+  const createNoteInNotebook = async (notebookId: string) => {
+    try {
+      const note = await api.createNote({ notebookId, title: t('common.untitledNote') });
+      actions.setActiveNote(note);
+      actions.addNoteToList({
+        id: note.id,
+        userId: note.userId,
+        title: note.title,
+        contentText: note.contentText || "",
+        notebookId: note.notebookId,
+        isPinned: note.isPinned || 0,
+        isFavorite: note.isFavorite || 0,
+        isLocked: note.isLocked || 0,
+        isArchived: note.isArchived || 0,
+        isTrashed: note.isTrashed || 0,
+        version: note.version || 1,
+        sortOrder: note.sortOrder || 0,
+        updatedAt: note.updatedAt,
+        createdAt: note.createdAt,
+      } as NoteListItem);
+      actions.setMobileView("editor");
+      actions.refreshNotebooks();
+
+      // 若新建发生在「所有笔记/收藏/标签」视图且系统自动选择了归属，提示用户
+      if (!state.selectedNotebookId && state.viewMode !== "notebook") {
+        const nb = state.notebooks.find((n) => n.id === notebookId);
+        if (nb) {
+          toast.info(t('noteList.noteCreatedInNotebook', { name: nb.name }));
+        }
+      }
+    } catch (err: any) {
+      console.error("创建笔记失败:", err);
+      toast.error(err?.message || t('noteList.createFailed'));
+    }
   };
 
   // 根据当前视图和目标笔记动态构建菜单项
@@ -812,10 +950,11 @@ export default function NoteList() {
       }
       case "trash": {
         haptic.heavy();
-        await api.updateNote(targetId, { isTrashed: 1 } as any);
         if (state.activeNote?.id === targetId) actions.setActiveNote(null);
-        await fetchNotes();
-        actions.refreshNotebooks();
+        actions.removeNoteFromList(targetId);
+        api.updateNote(targetId, { isTrashed: 1 } as any)
+          .then(() => actions.refreshNotebooks())
+          .catch(console.error);
         break;
       }
       case "move": {
@@ -828,17 +967,19 @@ export default function NoteList() {
       }
       case "restore": {
         haptic.success();
-        await api.updateNote(targetId, { isTrashed: 0 } as any);
-        await fetchNotes();
-        actions.refreshNotebooks();
+        actions.removeNoteFromList(targetId);
+        api.updateNote(targetId, { isTrashed: 0 } as any)
+          .then(() => actions.refreshNotebooks())
+          .catch(console.error);
         break;
       }
       case "delete_permanent": {
         haptic.heavy();
-        await api.deleteNote(targetId);
         if (state.activeNote?.id === targetId) actions.setActiveNote(null);
-        await fetchNotes();
-        actions.refreshNotebooks();
+        actions.removeNoteFromList(targetId);
+        api.deleteNote(targetId)
+          .then(() => actions.refreshNotebooks())
+          .catch(console.error);
         break;
       }
     }
@@ -1197,6 +1338,17 @@ export default function NoteList() {
         notebooks={state.notebooks}
         onMove={handleMoveNote}
         onClose={() => setMoveModal(null)}
+      />
+
+      {/* 新建笔记 - 笔记本选择器 */}
+      <NotebookPickerModal
+        isOpen={pickerOpen}
+        notebooks={state.notebooks}
+        onPick={async (nbId) => {
+          setPickerOpen(false);
+          await createNoteInNotebook(nbId);
+        }}
+        onClose={() => setPickerOpen(false)}
       />
     </div>
   );

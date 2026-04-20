@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useEditor, EditorContent, Extension } from "@tiptap/react";
+import { useEditor, EditorContent, Extension, ReactNodeViewRenderer } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { AnimatePresence, motion } from "framer-motion";import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -13,10 +13,11 @@ import { Table, TableRow, TableHeader, TableCell } from "@tiptap/extension-table
 import TextAlign from "@tiptap/extension-text-align";
 import { common, createLowlight } from "lowlight";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
+import { TextSelection } from "@tiptap/pm/state";
 import { markdownToSimpleHtml } from "@/lib/importService";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
-  Code, List, ListOrdered, Heading1, Heading2, Heading3,
+  List, ListOrdered, Heading1, Heading2, Heading3,
   Quote, ImagePlus, CheckSquare, Highlighter, Minus, Undo, Redo,
   FileCode, Sparkles, X, ZoomIn, ZoomOut, RotateCcw,
   Table2, Indent, Outdent, AlignLeft, AlignCenter, AlignRight, Trash2,
@@ -27,6 +28,7 @@ import { Note, Tag } from "@/types";
 import TagInput from "@/components/TagInput";
 import AIWritingAssistant from "@/components/AIWritingAssistant";
 import { SlashCommandsMenu, getDefaultSlashCommands, createSlashExtension, createSlashEventHandlers } from "@/components/SlashCommands";
+import CodeBlockView from "@/components/CodeBlockView";
 import { useTranslation } from "react-i18next";
 
 const lowlight = createLowlight(common);
@@ -179,6 +181,7 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
     extensions: [
       StarterKit.configure({
         codeBlock: false,
+        code: false,
         heading: { levels: [1, 2, 3] },
       }),
       Placeholder.configure({
@@ -190,7 +193,11 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         allowBase64: true,
         HTMLAttributes: { class: "rounded-lg max-w-full mx-auto my-4 shadow-md" },
       }),
-      CodeBlockLowlight.configure({ lowlight }),
+      CodeBlockLowlight.extend({
+        addNodeView() {
+          return ReactNodeViewRenderer(CodeBlockView);
+        },
+      }).configure({ lowlight, defaultLanguage: null as any }),
       Underline,
       Highlight.configure({
         multicolor: true,
@@ -208,7 +215,10 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         },
       }),
       Table.configure({
-        resizable: false,
+        resizable: true,
+        handleWidth: 5,
+        cellMinWidth: 60,
+        lastColumnResizable: true,
         HTMLAttributes: { class: 'tiptap-table' },
       }),
       TableRow,
@@ -226,11 +236,47 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
       attributes: {
         class: "prose prose-sm max-w-none focus:outline-none min-h-[300px] px-1",
       },
+      // 在 heading / blockquote 等块级节点行首按 Backspace 时，
+      // 统一把当前节点转为普通段落，避免某些导入/InputRule 后的
+      // 节点难以通过 Backspace 退出的问题（用户反馈的 # 开头无法删除）。
+      handleKeyDown: (view, event) => {
+        if (event.key !== "Backspace" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+          return false;
+        }
+        const { state: s } = view;
+        const { selection } = s;
+        if (!selection.empty) return false;
+        const { $from } = selection;
+        // 必须位于块级节点的第一个位置（行首）
+        if ($from.parentOffset !== 0) return false;
+        const parent = $from.parent;
+        const parentType = parent.type.name;
+        // 仅对 heading / blockquote 做行首 backspace 转段落
+        if (parentType !== "heading" && parentType !== "blockquote") {
+          return false;
+        }
+        const paragraphType = s.schema.nodes.paragraph;
+        if (!paragraphType) return false;
+        try {
+          // 对 heading：直接 setNode 变为 paragraph
+          if (parentType === "heading") {
+            const depth = $from.depth;
+            const tr = s.tr.setBlockType($from.before(depth), $from.after(depth), paragraphType);
+            view.dispatch(tr.scrollIntoView());
+            return true;
+          }
+          // 对 blockquote：lift 出引用
+          // 交由默认命令处理 —— 返回 false
+          return false;
+        } catch {
+          return false;
+        }
+      },
       handlePaste: (view, event) => {
         // 始终阻止浏览器默认粘贴行为，防止页面跳转到空白页
         event.preventDefault();
         try {
-          // 处理剪贴板中的图片文件（如截图粘贴）
+          // 1) 处理剪贴板中的图片文件（如截图粘贴）
           const items = event.clipboardData?.items;
           if (items) {
             for (let i = 0; i < items.length; i++) {
@@ -256,8 +302,65 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
             }
           }
 
-          // 如果剪贴板包含 HTML（如从网页复制），手动插入 HTML 内容
-          const html = event.clipboardData?.getData("text/html");
+          const text = event.clipboardData?.getData("text/plain") || "";
+          const html = event.clipboardData?.getData("text/html") || "";
+
+          // 2) 若当前光标在代码块内：不管来源是 html 还是 text，始终保留原始文本 + 换行
+          const { state: stCode } = view;
+          const $pasteFrom = stCode.selection.$from;
+          let inCodeBlock = false;
+          for (let d = $pasteFrom.depth; d >= 0; d--) {
+            if ($pasteFrom.node(d).type.name === "codeBlock") {
+              inCodeBlock = true;
+              break;
+            }
+          }
+          if (inCodeBlock) {
+            if (!text) return true;
+            const tr = stCode.tr.insertText(text);
+            view.dispatch(tr);
+            return true;
+          }
+
+          // 3) 多行纯文本（非 Markdown）：整段包进单一 codeBlock。
+          //    注意：必须优先于 HTML 分支，因为 VS Code / 浏览器复制代码时
+          //    通常同时带 text/html（每行一个 <div> 或 <pre><br>），
+          //    若走 HTML 解析会被拆成多块，导致"每行一个代码块"。
+          if (text && text.includes("\n") && !looksLikeMarkdown(text)) {
+            const { state, dispatch, schema } = view as any;
+            const codeBlockType = schema.nodes.codeBlock;
+            if (codeBlockType) {
+              const codeNode = codeBlockType.create({}, schema.text(text));
+              const tr = state.tr.replaceSelectionWith(codeNode, false);
+              dispatch(tr);
+              return true;
+            }
+          }
+
+          // 4) Markdown 纯文本：转 HTML 后插入
+          if (text && looksLikeMarkdown(text)) {
+            showPasteToast("converting", t("tiptap.markdownConverting"));
+            try {
+              const convertedHtml = markdownToSimpleHtml(text);
+              const { state, dispatch } = view;
+              const parser = ProseMirrorDOMParser.fromSchema(state.schema);
+              const tempDiv = document.createElement("div");
+              tempDiv.innerHTML = convertedHtml;
+              const slice = parser.parseSlice(tempDiv);
+              const tr = state.tr.replaceSelection(slice);
+              dispatch(tr);
+              showPasteToast("success", t("tiptap.markdownConvertSuccess"));
+            } catch (err) {
+              console.error("Markdown paste conversion failed:", err);
+              showPasteToast("error", t("tiptap.markdownConvertError"));
+              const { state, dispatch } = view;
+              const tr = state.tr.insertText(text);
+              dispatch(tr);
+            }
+            return true;
+          }
+
+          // 5) 只有 HTML 没有多行纯文本（如从网页复制的富文本片段）：解析插入
           if (html && html.trim().length > 0) {
             const { state, dispatch } = view;
             const parser = ProseMirrorDOMParser.fromSchema(state.schema);
@@ -269,43 +372,13 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
             return true;
           }
 
-        // 仅处理纯文本粘贴
-        const text = event.clipboardData?.getData("text/plain");
-        if (!text || text.trim().length === 0) return true;
-
-        // 检测是否包含 Markdown 格式标记
-        if (looksLikeMarkdown(text)) {
-
-          // 显示转换中提示
-          showPasteToast("converting", t("tiptap.markdownConverting"));
-          try {
-            const convertedHtml = markdownToSimpleHtml(text);
-            // 使用 ProseMirror 的 API 插入 HTML 片段
-            const { state, dispatch } = view;
-            const parser = ProseMirrorDOMParser.fromSchema(state.schema);
-            const tempDiv = document.createElement("div");
-            tempDiv.innerHTML = convertedHtml;
-            const slice = parser.parseSlice(tempDiv);
-            const tr = state.tr.replaceSelection(slice);
-            dispatch(tr);
-            // 显示转换成功提示
-            showPasteToast("success", t("tiptap.markdownConvertSuccess"));
-          } catch (err) {
-            console.error("Markdown paste conversion failed:", err);
-            // 转换失败时回退为纯文本插入
-            showPasteToast("error", t("tiptap.markdownConvertError"));
-            const { state, dispatch } = view;
-            const tr = state.tr.insertText(text);
-            dispatch(tr);
+          // 6) 单行纯文本或其他：直接插入
+          if (text) {
+            const { state: st, dispatch: dp } = view;
+            const tr = st.tr.insertText(text);
+            dp(tr);
           }
           return true;
-        }
-
-        // 不是 Markdown，手动插入纯文本
-        const { state: st, dispatch: dp } = view;
-        const tr = st.tr.insertText(text);
-        dp(tr);
-        return true;
         } catch (err) {
           console.error("Paste handling error:", err);
           // 出错时尝试插入纯文本，避免页面崩溃
@@ -475,6 +548,91 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
     input.click();
   }, [editor]);
 
+  /**
+   * 严格作用于当前选区的代码块切换：
+   *   - 光标在代码块内：取消代码块（转为段落），与默认 toggleCodeBlock 一致
+   *   - 无选区：将光标所在的整个块切换为代码块（与默认行为一致）
+   *   - 有选区：把选区覆盖的所有顶层块合并为一个 codeBlock
+   *            （以顶层块为粒度，不做"半块切出"处理，避免跨多块替换产生多个代码块）
+   */
+  const toggleCodeBlockStrict = useCallback(() => {
+    if (!editor) return;
+    const { state } = editor;
+    const { selection, schema, doc } = state;
+    const codeBlockType = schema.nodes.codeBlock;
+    if (!codeBlockType) return;
+
+    // 光标已在代码块内：取消代码块
+    if (editor.isActive("codeBlock")) {
+      editor.chain().focus().toggleCodeBlock().run();
+      return;
+    }
+
+    // 无选区：退回默认行为（转当前块为代码块）
+    if (selection.empty) {
+      editor.chain().focus().toggleCodeBlock().run();
+      return;
+    }
+
+    const { from, to } = selection;
+    const $from = doc.resolve(from);
+
+    // 仅支持顶层（doc 直接子块）范围的整体包裹；
+    // 嵌套结构（列表 / 表格 / 引用块等）内部的选区交给默认命令，避免破坏结构
+    if ($from.depth !== 1) {
+      editor.chain().focus().toggleCodeBlock().run();
+      return;
+    }
+    // 为避免 $to.before(1) 在 to 正好位于两块边界时指到"下一个块"，
+    // 用 (to - 1) 解析末块位置；当 from === to 已被上面 selection.empty 排除，所以 to-1 >= from。
+    const $toInside = doc.resolve(Math.max(from, to - 1));
+    if ($toInside.depth !== 1) {
+      editor.chain().focus().toggleCodeBlock().run();
+      return;
+    }
+
+    // 选区覆盖的顶层块范围（左闭右开）：从首块起点到末块终点
+    const blockStart = $from.before(1);
+    const blockEnd = $toInside.after(1);
+
+    // 收集范围内所有顶层块的文本，按换行拼接
+    const lines: string[] = [];
+    doc.nodesBetween(blockStart, blockEnd, (node, _pos, _parent, _index) => {
+      // 只处理 doc 的直接子节点
+      if (_parent === doc) {
+        if (node.type.name === "codeBlock" || node.isTextblock) {
+          lines.push(node.textContent);
+        } else {
+          // 非文本块（如 horizontalRule、image 等）：用空行占位，避免完全丢失
+          lines.push("");
+        }
+        return false; // 不再深入该块内部
+      }
+      return true;
+    });
+
+    const codeText = lines.join("\n");
+    const codeNode = codeText
+      ? codeBlockType.create({}, schema.text(codeText))
+      : codeBlockType.create();
+
+    editor
+      .chain()
+      .focus()
+      .command(({ tr, dispatch }) => {
+        if (!dispatch) return true;
+        // 先删除覆盖范围，再在原位置插入单一 codeBlock
+        tr.delete(blockStart, blockEnd);
+        tr.insert(blockStart, codeNode);
+        // 光标定位到新代码块末尾
+        const caretPos = blockStart + codeNode.nodeSize - 1;
+        const safePos = Math.min(caretPos, tr.doc.content.size);
+        tr.setSelection(TextSelection.near(tr.doc.resolve(safePos), -1));
+        return true;
+      })
+      .run();
+  }, [editor]);
+
   const openAIAssistant = useCallback(() => {
     if (!editor) return;
     const { from, to } = editor.state.selection;
@@ -584,13 +742,6 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         >
           <Highlighter size={iconSize} />
         </ToolbarButton>
-        <ToolbarButton
-          onClick={() => editor.chain().focus().toggleCode().run()}
-          isActive={editor.isActive("code")}
-          title={t('tiptap.inlineCode')}
-        >
-          <Code size={iconSize} />
-        </ToolbarButton>
 
         <ToolbarDivider />
 
@@ -626,7 +777,7 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
           <Quote size={iconSize} />
         </ToolbarButton>
         <ToolbarButton
-          onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+          onClick={toggleCodeBlockStrict}
           isActive={editor.isActive("codeBlock")}
           title={t('tiptap.codeBlock')}
         >
@@ -806,20 +957,47 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         <BubbleMenu editor={editor}
           className="flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
         >
-          <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} isActive={editor.isActive("bold")}>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleBold().run()}
+            isActive={editor.isActive("bold")}
+            title={t('tiptap.bold')}
+          >
             <Bold size={14} />
           </ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} isActive={editor.isActive("italic")}>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleItalic().run()}
+            isActive={editor.isActive("italic")}
+            title={t('tiptap.italic')}
+          >
             <Italic size={14} />
           </ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleUnderline().run()} isActive={editor.isActive("underline")}>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleUnderline().run()}
+            isActive={editor.isActive("underline")}
+            title={t('tiptap.underline')}
+          >
             <UnderlineIcon size={14} />
           </ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleHighlight().run()} isActive={editor.isActive("highlight")}>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleStrike().run()}
+            isActive={editor.isActive("strike")}
+            title={t('tiptap.strikethrough')}
+          >
+            <Strikethrough size={14} />
+          </ToolbarButton>
+          <ToolbarButton
+            onClick={() => editor.chain().focus().toggleHighlight().run()}
+            isActive={editor.isActive("highlight")}
+            title={t('tiptap.highlight')}
+          >
             <Highlighter size={14} />
           </ToolbarButton>
-          <ToolbarButton onClick={() => editor.chain().focus().toggleCode().run()} isActive={editor.isActive("code")}>
-            <Code size={14} />
+          <ToolbarButton
+            onClick={toggleCodeBlockStrict}
+            isActive={editor.isActive("codeBlock")}
+            title={t('tiptap.codeBlock')}
+          >
+            <FileCode size={14} />
           </ToolbarButton>
           <div className="w-px h-4 bg-app-border mx-0.5" />
           <ToolbarButton onClick={openAIAssistant} title={t('tiptap.aiAssistant')}>
@@ -991,6 +1169,9 @@ function looksLikeMarkdown(text: string): boolean {
   return score >= 3;
 }
 
+/**
+ * 解析笔记内容（JSON / HTML / 纯文本）为 Tiptap 可用的 doc 结构
+ */
 function parseContent(content: string): any {
   if (!content || content === "{}") {
     return { type: "doc", content: [{ type: "paragraph" }] };

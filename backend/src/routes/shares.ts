@@ -387,6 +387,22 @@ sharesRouter.post("/note/:noteId/versions/:versionId/restore", (c) => {
   return c.json(updated);
 });
 
+// 清空某笔记的全部版本历史
+sharesRouter.delete("/note/:noteId/versions", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "";
+  const noteId = c.req.param("noteId");
+
+  // 验证笔记归属
+  const note = db.prepare("SELECT id FROM notes WHERE id = ? AND userId = ?").get(noteId, userId) as any;
+  if (!note) return c.json({ error: "笔记不存在或无权操作" }, 404);
+
+  const before = (db.prepare("SELECT COUNT(*) as count FROM note_versions WHERE noteId = ?").get(noteId) as any).count;
+  db.prepare("DELETE FROM note_versions WHERE noteId = ?").run(noteId);
+
+  return c.json({ success: true, count: before });
+});
+
 // ===== Phase 3: 评论批注 API =====
 
 // 获取某笔记的评论列表

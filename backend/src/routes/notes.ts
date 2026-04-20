@@ -58,6 +58,40 @@ app.get("/", (c) => {
   return c.json(notes);
 });
 
+// 清空回收站（必须在 /:id 路由之前注册，否则 'trash' 会被当作 :id 参数匹配）
+// 批量永久删除当前用户回收站中所有未锁定的笔记
+app.delete("/trash/empty", (c) => {
+  const db = getDb();
+  const userId = c.req.header("X-User-Id") || "demo";
+
+  // 找出所有可删除的回收站笔记（排除锁定）
+  const targets = db.prepare(
+    "SELECT id FROM notes WHERE userId = ? AND isTrashed = 1 AND isLocked = 0"
+  ).all(userId) as { id: string }[];
+
+  // 统计跳过的锁定笔记数量
+  const skipped = (db.prepare(
+    "SELECT COUNT(*) as count FROM notes WHERE userId = ? AND isTrashed = 1 AND isLocked = 1"
+  ).get(userId) as { count: number }).count;
+
+  if (targets.length === 0) {
+    return c.json({ success: true, count: 0, skipped });
+  }
+
+  const ids = targets.map((r) => r.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const deleteMany = db.transaction((list: string[]) => {
+    db.prepare(`DELETE FROM notes WHERE id IN (${placeholders})`).run(...list);
+  });
+  deleteMany(ids);
+
+  // 触发 Webhook 和审计日志
+  emitWebhook("note.trash_emptied", userId, { count: ids.length });
+  logAudit(userId, "note", "trash_empty", { count: ids.length, noteIds: ids });
+
+  return c.json({ success: true, count: ids.length, skipped });
+});
+
 // 批量更新笔记排序（必须在 /:id 路由之前注册，否则 'reorder' 会被当作 :id 参数匹配）
 app.put("/reorder/batch", async (c) => {
   const db = getDb();

@@ -4,6 +4,10 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { ShareInfo, SharedNoteContent, ShareComment } from "@/types";
 import { cn } from "@/lib/utils";
+import { common, createLowlight } from "lowlight";
+
+// 分享页独立的 lowlight 实例（与编辑器保持一致的 common 语法集合）
+const sharedLowlight = createLowlight(common);
 
 interface SharedNoteViewProps {
   shareToken: string;
@@ -172,6 +176,36 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
     }
   };
 
+  // 分享页内的复制代码按钮事件委托
+  const handleSharedContentClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const btn = target.closest("[data-copy-code]") as HTMLElement | null;
+    if (!btn) return;
+    e.preventDefault();
+    const wrapper = btn.closest(".shared-code-block") as HTMLElement | null;
+    const codeEl = wrapper?.querySelector("code");
+    const text = codeEl?.textContent ?? "";
+    const done = () => {
+      btn.setAttribute("data-copied", "1");
+      setTimeout(() => btn.removeAttribute("data-copied"), 1500);
+    };
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(done).catch(() => {});
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); done(); } finally { document.body.removeChild(ta); }
+      }
+    } catch (err) {
+      console.error("复制代码失败:", err);
+    }
+  }, []);
+
   // 加载中
   if (loading) {
     return (
@@ -316,13 +350,13 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
       {/* 笔记内容 */}
       <main className="max-w-4xl mx-auto px-4 py-8">
         <div
-          className="prose prose-sm dark:prose-invert max-w-none
+          className="shared-note-content prose prose-sm dark:prose-invert max-w-none
             prose-headings:text-zinc-800 dark:prose-headings:text-zinc-200
             prose-p:text-zinc-600 dark:prose-p:text-zinc-300
             prose-a:text-indigo-500
             prose-code:text-indigo-600 dark:prose-code:text-indigo-400
-            prose-pre:bg-zinc-100 dark:prose-pre:bg-zinc-800
             prose-blockquote:border-indigo-300 dark:prose-blockquote:border-indigo-700"
+          onClick={handleSharedContentClick}
           dangerouslySetInnerHTML={{ __html: renderContent(content.content) }}
         />
       </main>
@@ -416,15 +450,35 @@ function renderContent(content: string): string {
 /** 简单的 Tiptap JSON → HTML 渲染器 */
 function renderTiptapJSON(doc: any): string {
   if (!doc.content) return "";
-  return doc.content.map((node: any) => renderNode(node)).join("");
+  // 顶层：把紧邻的 codeBlock 节点合并为一个，兼容历史笔记里被粘贴 bug 拆散的数据
+  const merged: any[] = [];
+  for (const node of doc.content) {
+    const last = merged[merged.length - 1];
+    if (
+      node?.type === "codeBlock" &&
+      last?.type === "codeBlock" &&
+      (last.attrs?.language || null) === (node.attrs?.language || null)
+    ) {
+      const lastText = (last.content || []).map((c: any) => c.text || "").join("");
+      const curText = (node.content || []).map((c: any) => c.text || "").join("");
+      const mergedText = lastText + "\n" + curText;
+      last.content = mergedText ? [{ type: "text", text: mergedText }] : [];
+      continue;
+    }
+    merged.push(node);
+  }
+  return merged.map((node: any) => renderNode(node)).join("");
 }
 
 function renderNode(node: any): string {
   if (!node) return "";
 
   switch (node.type) {
-    case "paragraph":
-      return `<p>${renderChildren(node)}</p>`;
+    case "paragraph": {
+      const inner = renderChildren(node);
+      // Tiptap 空段落渲染为空 <p>，保留段落间距
+      return `<p>${inner || "<br/>"}</p>`;
+    }
     case "heading": {
       const level = node.attrs?.level || 1;
       return `<h${level}>${renderChildren(node)}</h${level}>`;
@@ -441,10 +495,8 @@ function renderNode(node: any): string {
       const checked = node.attrs?.checked ? "checked" : "";
       return `<li class="task-item"><input type="checkbox" ${checked} disabled />${renderChildren(node)}</li>`;
     }
-    case "codeBlock": {
-      const lang = node.attrs?.language || "";
-      return `<pre><code class="language-${lang}">${escapeHtml(renderChildren(node))}</code></pre>`;
-    }
+    case "codeBlock":
+      return renderCodeBlock(node);
     case "blockquote":
       return `<blockquote>${renderChildren(node)}</blockquote>`;
     case "horizontalRule":
@@ -500,6 +552,89 @@ function renderNode(node: any): string {
 function renderChildren(node: any): string {
   if (!node.content) return node.text || "";
   return node.content.map((child: any) => renderNode(child)).join("");
+}
+
+/**
+ * 渲染代码块，视觉与编辑器内的 CodeBlockView 一致：
+ *   - mac 风格三色小圆点 + 语言徽章
+ *   - 右上角复制按钮（由 onClick 事件委托处理）
+ *   - 暗色代码区 + 等宽字体
+ */
+function renderCodeBlock(node: any): string {
+  const rawLang = node.attrs?.language;
+  const langLabel = !rawLang || rawLang === "auto" ? "auto" : String(rawLang).toLowerCase();
+  const codeText = (node.content || []).map((c: any) => c.text || "").join("");
+  const languageClass = langLabel && langLabel !== "auto" ? ` language-${escapeHtml(langLabel)}` : "";
+
+  // 用 lowlight 生成带 hljs token 的 hast，再序列化为 HTML 注入 <code>
+  const highlighted = highlightCode(codeText, langLabel);
+
+  return `
+<div class="shared-code-block">
+  <div class="shared-code-toolbar">
+    <div class="shared-code-toolbar-left">
+      <span class="shared-code-dots">
+        <span class="shared-code-dot" style="background:#ff5f57"></span>
+        <span class="shared-code-dot" style="background:#febc2e"></span>
+        <span class="shared-code-dot" style="background:#28c840"></span>
+      </span>
+      <span class="shared-code-lang">${escapeHtml(langLabel)}</span>
+    </div>
+    <button type="button" class="shared-code-copy" data-copy-code aria-label="复制代码">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+      <span class="shared-code-copy-label">复制</span>
+    </button>
+  </div>
+  <pre class="shared-code-pre"><code class="shared-code-content hljs${languageClass}">${highlighted}</code></pre>
+</div>
+`.trim();
+}
+
+/**
+ * 使用 lowlight 对代码做语法高亮，返回可直接插入 <code> 的 HTML 字符串
+ * - 已知语言：highlight(lang, code)
+ * - auto 或未注册语言：highlightAuto(code)
+ * - 失败时回退为转义后的纯文本
+ */
+function highlightCode(code: string, lang: string): string {
+  if (!code) return "";
+  try {
+    let tree: any;
+    if (lang && lang !== "auto" && sharedLowlight.registered(lang)) {
+      tree = sharedLowlight.highlight(lang, code);
+    } else {
+      tree = sharedLowlight.highlightAuto(code);
+    }
+    return hastToHtml(tree);
+  } catch {
+    return escapeHtml(code);
+  }
+}
+
+/**
+ * 极简 hast → HTML 序列化器，只处理 lowlight 会产出的三种节点：
+ *   - root：仅渲染 children
+ *   - element：标签名 + className + children（lowlight 不产出其他属性）
+ *   - text：转义后输出
+ */
+function hastToHtml(node: any): string {
+  if (!node) return "";
+  if (node.type === "root") {
+    return (node.children || []).map(hastToHtml).join("");
+  }
+  if (node.type === "text") {
+    return escapeHtml(node.value || "");
+  }
+  if (node.type === "element") {
+    const tag = String(node.tagName || "span");
+    const classList = node.properties && Array.isArray(node.properties.className)
+      ? node.properties.className.join(" ")
+      : "";
+    const classAttr = classList ? ` class="${escapeHtml(classList)}"` : "";
+    const inner = (node.children || []).map(hastToHtml).join("");
+    return `<${tag}${classAttr}>${inner}</${tag}>`;
+  }
+  return "";
 }
 
 function escapeHtml(str: string): string {

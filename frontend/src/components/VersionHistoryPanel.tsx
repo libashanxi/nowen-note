@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, History, RotateCcw, ChevronRight, FileText, Loader2, AlertTriangle } from "lucide-react";
+import { X, History, RotateCcw, ChevronRight, FileText, Loader2, AlertTriangle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/lib/api";
 import { NoteVersion } from "@/types";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
+import { toast } from "@/lib/toast";
 
 interface VersionHistoryPanelProps {
   noteId: string;
@@ -15,6 +17,7 @@ interface VersionHistoryPanelProps {
 }
 
 export default function VersionHistoryPanel({ noteId, noteTitle, onRestore, onClose }: VersionHistoryPanelProps) {
+  const { t } = useTranslation();
   const [versions, setVersions] = useState<NoteVersion[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -23,6 +26,31 @@ export default function VersionHistoryPanel({ noteId, noteTitle, onRestore, onCl
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const handleClearAll = async () => {
+    if (clearing) return;
+    if (total === 0) {
+      toast.info(t("versions.clearEmpty"));
+      return;
+    }
+    setClearing(true);
+    try {
+      const res = await api.clearNoteVersions(noteId);
+      setVersions([]);
+      setTotal(0);
+      setSelectedVersion(null);
+      setPreviewContent(null);
+      setConfirmClear(false);
+      toast.success(t("versions.clearSuccess", { count: res.count }));
+    } catch (e: any) {
+      console.error("清空版本历史失败:", e);
+      toast.error(t("versions.clearFailed") + (e?.message ? `: ${e.message}` : ""));
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const loadVersions = useCallback(async () => {
     try {
@@ -117,9 +145,44 @@ export default function VersionHistoryPanel({ noteId, noteTitle, onRestore, onCl
               <p className="text-[11px] text-tx-tertiary truncate max-w-[300px]">{noteTitle} · {total} 个版本</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-app-hover text-tx-tertiary hover:text-tx-secondary transition-colors">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1">
+            {total > 0 && (
+              confirmClear ? (
+                <div className="flex items-center gap-1.5 mr-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setConfirmClear(false)}
+                    disabled={clearing}
+                    className="h-7 text-xs"
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleClearAll}
+                    disabled={clearing}
+                    className="h-7 text-xs bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    {clearing ? <Loader2 size={12} className="animate-spin mr-1" /> : <Trash2 size={12} className="mr-1" />}
+                    {t("versions.clearConfirmTitle")}
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmClear(true)}
+                  title={t("versions.clear")}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-tx-tertiary hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 size={13} />
+                  <span>{t("versions.clear")}</span>
+                </button>
+              )
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-app-hover text-tx-tertiary hover:text-tx-secondary transition-colors">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Content */}

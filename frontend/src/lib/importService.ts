@@ -38,6 +38,27 @@ export interface ImportFileInfo {
   size: number;
   selected: boolean;
   source?: string; // 来源标识: "md" | "txt" | "html" | "xiaomi" | "oppo" | "vivo" | "oneplus"
+  notebookName?: string; // （已废弃，仅为向后兼容）从路径/目录推导出的单层笔记本名
+  notebookPath?: string[]; // 笔记本层级路径（从根到子），如 ["我是文章2", "test2", "新笔记本"]
+  imageMap?: Record<string, string>; // 相对路径 -> base64 data URI（zip 内的图片资源）
+}
+
+// 导入选项
+export interface ImportOptions {
+  /**
+   * 是否"为每个文件创建以文件名命名的外层笔记本"
+   * - true:  每个文件 → 建/找一个同名笔记本（清洗后的文件名）
+   * - false: 保持原逻辑（zip 目录派生；散文件归到"导入的笔记"或用户选的笔记本）
+   */
+  perFileNotebook?: boolean;
+  /**
+   * 当 perFileNotebook=true 时，同名笔记本的处理策略
+   * - "merge":  同名合并到同一笔记本（默认；依赖后端按名复用）
+   * - "unique": 在本批次内自动编号 ("name", "name (2)", "name (3)"...)
+   */
+  duplicateStrategy?: "merge" | "unique";
+  /** perFileNotebook 启用时，清洗后为空的回退名 */
+  fallbackNotebookName?: string;
 }
 
 export type ImportProgress = {
@@ -52,6 +73,64 @@ const SUPPORTED_EXTENSIONS = [".md", ".txt", ".markdown", ".html", ".htm"];
 
 function isSupportedFile(name: string): boolean {
   return SUPPORTED_EXTENSIONS.some((ext) => name.toLowerCase().endsWith(ext));
+}
+
+// 笔记本名的最大长度（超出会被截断），与后端 notebooks.name 字段兼容
+const MAX_NOTEBOOK_NAME_LENGTH = 60;
+// 默认笔记本名（清洗后为空时的回退）
+const DEFAULT_FALLBACK_NOTEBOOK_NAME = "导入的笔记";
+
+/**
+ * 从文件名派生出一个合法的笔记本名
+ * 处理：
+ * 1. 去掉已知的笔记扩展名（.md/.txt/.markdown/.html/.htm）
+ * 2. 路径分隔符仅保留最后一段（兼容 webkitRelativePath）
+ * 3. 剥离 Windows/跨平台非法字符（<>:"/\|?*）和控制字符
+ * 4. 合并多余空白、裁剪首尾空白和点号
+ * 5. 长度超限则按视觉字符截断
+ * 6. 为空时返回 null（调用方决定回退）
+ */
+export function deriveNotebookNameFromFile(fileName: string): string | null {
+  if (!fileName || typeof fileName !== "string") return null;
+
+  // 只取最后一段（例如 webkitRelativePath: "folder/a.md" -> "a.md"）
+  const base = fileName.split(/[\\/]+/).pop() || fileName;
+
+  // 去掉支持的扩展名
+  let name = base;
+  for (const ext of SUPPORTED_EXTENSIONS) {
+    if (name.toLowerCase().endsWith(ext)) {
+      name = name.slice(0, -ext.length);
+      break;
+    }
+  }
+
+  // 剥离控制字符 + 跨平台非法字符
+  // eslint-disable-next-line no-control-regex
+  name = name.replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, " ");
+
+  // 合并空白 & 去首尾 .、空格（Windows 不允许以点号或空格结尾）
+  name = name.replace(/\s+/g, " ").replace(/^[\s.]+|[\s.]+$/g, "");
+
+  if (!name) return null;
+
+  // 长度裁剪（按 code point 计，避免截断到代理对中间）
+  if ([...name].length > MAX_NOTEBOOK_NAME_LENGTH) {
+    name = [...name].slice(0, MAX_NOTEBOOK_NAME_LENGTH).join("").trim();
+  }
+
+  return name || null;
+}
+
+/**
+ * 在批次内对同名笔记本自动编号：name -> name, name (2), name (3) ...
+ * 保持与 `getOrCreateNotebookByName` 幂等性兼容（后端按完整名字找/建）
+ */
+function uniquifyNotebookName(name: string, used: Map<string, number>): string {
+  const count = used.get(name) || 0;
+  used.set(name, count + 1);
+  if (count === 0) return name;
+  return `${name} (${count + 1})`;
 }
 
 function isHtmlFile(name: string): boolean {
@@ -182,12 +261,126 @@ export async function readMarkdownFiles(
   return result;
 }
 
+// 图片扩展名 → MIME 类型
+const IMAGE_MIME_MAP: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  bmp: "image/bmp",
+  ico: "image/x-icon",
+};
+
+function isImageFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  const ext = lower.split(".").pop() || "";
+  return ext in IMAGE_MIME_MAP;
+}
+
+function getImageMime(name: string): string {
+  const ext = (name.toLowerCase().split(".").pop() || "") as string;
+  return IMAGE_MIME_MAP[ext] || "application/octet-stream";
+}
+
+// 从 zip 内部路径推导笔记本名（取第一级目录名）
+function deriveNotebookName(path: string): string | undefined {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length < 2) return undefined; // 文件位于根目录
+  const first = parts[0];
+  // 过滤常见的无意义目录
+  if (first.startsWith(".") || first === "__MACOSX" || first.toLowerCase() === "assets" || first.toLowerCase() === "images") {
+    return undefined;
+  }
+  return first;
+}
+
+// 清洗单个路径片段（目录名），规则与 deriveNotebookNameFromFile 一致但不去扩展名
+function sanitizeSegment(segment: string): string | null {
+  if (!segment) return null;
+  let s = segment;
+  // 剥离控制字符 + 跨平台非法字符
+  // eslint-disable-next-line no-control-regex
+  s = s.replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, " ");
+  // 合并空白 & 去首尾 .、空格
+  s = s.replace(/\s+/g, " ").replace(/^[\s.]+|[\s.]+$/g, "");
+  if (!s) return null;
+  // 长度裁剪
+  if ([...s].length > MAX_NOTEBOOK_NAME_LENGTH) {
+    s = [...s].slice(0, MAX_NOTEBOOK_NAME_LENGTH).join("").trim();
+  }
+  return s || null;
+}
+
+/**
+ * 从 zip 内部路径推导完整的笔记本层级路径。
+ * 例如 path = "我是文章2/test2/新笔记本/note.md"
+ *      -> ["我是文章2", "test2", "新笔记本"]
+ * 返回的数组顺序为从根到叶。
+ *
+ * 过滤规则：
+ * - 跳过 "__MACOSX"、以 "." 开头的隐藏目录
+ * - 跳过 "assets" / "images" 等纯资源目录（仅当它们出现在中间或末端且不是唯一目录时）
+ * - 每段经过 sanitizeSegment 清洗
+ */
+function deriveNotebookPath(path: string, outerFolderName?: string): string[] {
+  const parts = path.split("/").filter(Boolean);
+  // 最后一段是文件名，不算笔记本
+  const dirParts = parts.slice(0, -1);
+
+  const result: string[] = [];
+  for (const raw of dirParts) {
+    // 过滤无意义目录
+    if (raw.startsWith(".") || raw === "__MACOSX") continue;
+    const lower = raw.toLowerCase();
+    if (lower === "assets" || lower === "images") continue;
+    const cleaned = sanitizeSegment(raw);
+    if (cleaned) result.push(cleaned);
+  }
+
+  // 如果提供了最外层文件夹名（zip 文件名派生），并且它还没作为第一段出现，则前置
+  if (outerFolderName) {
+    if (result.length === 0 || result[0] !== outerFolderName) {
+      result.unshift(outerFolderName);
+    }
+  }
+
+  return result;
+}
+
 // 从 ZIP 文件中读取笔记
 export async function readMarkdownFromZip(file: File): Promise<ImportFileInfo[]> {
   const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(file);
   const result: ImportFileInfo[] = [];
 
+  // 用 zip 文件名（去掉 .zip 扩展）作为最外层笔记本名，保证"导出前的顶层目录"在导入后依然存在
+  const rawZipBase = (file.name || "archive.zip").replace(/\.zip$/i, "");
+  const outerFolderName = sanitizeSegment(rawZipBase) || "导入的笔记";
+
+  // 第一轮：扫描所有图片文件，构建路径 → base64 的映射
+  const imageMap: Record<string, string> = {};
+  for (const [path, zipEntry] of Object.entries(zip.files)) {
+    if (zipEntry.dir) continue;
+    if (path.includes("__MACOSX") || path.startsWith(".")) continue;
+    if (!isImageFile(path)) continue;
+    try {
+      const base64 = await zipEntry.async("base64");
+      const mime = getImageMime(path);
+      const dataUri = `data:${mime};base64,${base64}`;
+      // 同时用完整路径和文件名做 key，提升相对路径匹配命中率
+      imageMap[path] = dataUri;
+      const fileName = path.split("/").pop();
+      if (fileName && !imageMap[fileName]) {
+        imageMap[fileName] = dataUri;
+      }
+    } catch (err) {
+      console.warn("读取 zip 图片失败:", path, err);
+    }
+  }
+
+  // 第二轮：扫描笔记文件
   for (const [path, zipEntry] of Object.entries(zip.files)) {
     if (zipEntry.dir) continue;
     if (!isSupportedFile(path)) continue;
@@ -198,6 +391,10 @@ export async function readMarkdownFromZip(file: File): Promise<ImportFileInfo[]>
     const text = await zipEntry.async("text");
     const fileName = path.split("/").pop() || path;
     const fileNameTitle = fileName.replace(/\.(md|txt|markdown|html|htm)$/i, "");
+    // 完整层级：zip 文件名（最外层） + zip 内部所有中间目录
+    const notebookPath = deriveNotebookPath(path, outerFolderName);
+    // notebookName 保留为末级目录名（向后兼容 & 日志用）
+    const notebookName = notebookPath.length > 0 ? notebookPath[notebookPath.length - 1] : undefined;
 
     if (isHtmlFile(fileName)) {
       const source = detectHtmlSource(text, fileName);
@@ -209,6 +406,9 @@ export async function readMarkdownFromZip(file: File): Promise<ImportFileInfo[]>
         size: text.length,
         selected: true,
         source,
+        notebookName,
+        notebookPath,
+        imageMap,
       });
     } else {
       result.push({
@@ -218,6 +418,9 @@ export async function readMarkdownFromZip(file: File): Promise<ImportFileInfo[]>
         size: text.length,
         selected: true,
         source: fileName.endsWith(".txt") ? "txt" : "md",
+        notebookName,
+        notebookPath,
+        imageMap,
       });
     }
   }
@@ -244,7 +447,7 @@ function extractFrontmatterDates(md: string): { createdAt?: string; updatedAt?: 
 }
 
 // 将 Markdown 转为 HTML（用于存储到 Tiptap 格式）
-export function markdownToSimpleHtml(md: string): string {
+export function markdownToSimpleHtml(md: string, imageMap?: Record<string, string>): string {
   // 去除 YAML frontmatter
   const content = md.replace(/^---[\s\S]*?---\n*/m, "");
   const lines = content.split("\n");
@@ -255,9 +458,13 @@ export function markdownToSimpleHtml(md: string): string {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // 空行 → 跳过
+    // 空行 → 保留为空段落（避免空行被吞掉）
     if (!trimmed) {
-      i++;
+      // 连续多个空行合并为一个空段落，防止生成过多无意义节点
+      htmlParts.push("<p></p>");
+      while (i < lines.length && !lines[i].trim()) {
+        i++;
+      }
       continue;
     }
 
@@ -296,7 +503,7 @@ export function markdownToSimpleHtml(md: string): string {
       const quotedContent = quoteLines
         .join("\n")
         .split("\n")
-        .map((l) => (l.trim() ? `<p>${inlineMarkdown(l)}</p>` : ""))
+        .map((l) => (l.trim() ? `<p>${inlineMarkdown(l, imageMap)}</p>` : ""))
         .filter(Boolean)
         .join("");
       htmlParts.push(`<blockquote>${quotedContent}</blockquote>`);
@@ -314,7 +521,7 @@ export function markdownToSimpleHtml(md: string): string {
     const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
       const level = headingMatch[1].length;
-      htmlParts.push(`<h${level}>${inlineMarkdown(headingMatch[2])}</h${level}>`);
+      htmlParts.push(`<h${level}>${inlineMarkdown(headingMatch[2], imageMap)}</h${level}>`);
       i++;
       continue;
     }
@@ -348,7 +555,7 @@ export function markdownToSimpleHtml(md: string): string {
           if (wrap === "tbody") tableHtml += "<tbody>";
           tableHtml += "<tr>";
           cells.forEach((c) => {
-            tableHtml += `<${tag}>${inlineMarkdown(c.trim())}</${tag}>`;
+            tableHtml += `<${tag}>${inlineMarkdown(c.trim(), imageMap)}</${tag}>`;
           });
           tableHtml += "</tr>";
           if (wrap === "thead") tableHtml += "</thead>";
@@ -368,7 +575,7 @@ export function markdownToSimpleHtml(md: string): string {
         if (taskMatch) {
           const checked = taskMatch[1].toLowerCase() === "x";
           taskItems.push(
-            `<li data-type="taskItem" data-checked="${checked}"><label><input type="checkbox" ${checked ? "checked" : ""}><span></span></label><div><p>${inlineMarkdown(taskMatch[2])}</p></div></li>`
+            `<li data-type="taskItem" data-checked="${checked}"><label><input type="checkbox" ${checked ? "checked" : ""}><span></span></label><div><p>${inlineMarkdown(taskMatch[2], imageMap)}</p></div></li>`
           );
         }
         i++;
@@ -382,7 +589,7 @@ export function markdownToSimpleHtml(md: string): string {
       const listItems: string[] = [];
       while (i < lines.length && /^[-*+]\s+/.test(lines[i].trim())) {
         const itemText = lines[i].trim().replace(/^[-*+]\s+/, "");
-        listItems.push(`<li><p>${inlineMarkdown(itemText)}</p></li>`);
+        listItems.push(`<li><p>${inlineMarkdown(itemText, imageMap)}</p></li>`);
         i++;
       }
       htmlParts.push(`<ul>${listItems.join("")}</ul>`);
@@ -394,7 +601,7 @@ export function markdownToSimpleHtml(md: string): string {
       const listItems: string[] = [];
       while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
         const itemText = lines[i].trim().replace(/^\d+\.\s+/, "");
-        listItems.push(`<li><p>${inlineMarkdown(itemText)}</p></li>`);
+        listItems.push(`<li><p>${inlineMarkdown(itemText, imageMap)}</p></li>`);
         i++;
       }
       htmlParts.push(`<ol>${listItems.join("")}</ol>`);
@@ -402,19 +609,51 @@ export function markdownToSimpleHtml(md: string): string {
     }
 
     // 普通段落
-    htmlParts.push(`<p>${inlineMarkdown(trimmed)}</p>`);
+    htmlParts.push(`<p>${inlineMarkdown(trimmed, imageMap)}</p>`);
     i++;
   }
 
   return htmlParts.join("\n");
 }
 
+// 在 imageMap 中查找图片路径对应的 data URI
+function resolveImageSrc(src: string, imageMap?: Record<string, string>): string {
+  if (!imageMap) return src;
+  // 外链 / 绝对 URL / 已是 data URI，不处理
+  if (/^(https?:|data:|\/\/)/i.test(src)) return src;
+
+  // 去除查询参数和 hash
+  const clean = src.split(/[?#]/)[0];
+  // 直接命中
+  if (imageMap[clean]) return imageMap[clean];
+  // 规范化开头的 ./ 或 /
+  const normalized = clean.replace(/^\.\//, "").replace(/^\//, "");
+  if (imageMap[normalized]) return imageMap[normalized];
+  // 仅用文件名匹配
+  const base = normalized.split("/").pop();
+  if (base && imageMap[base]) return imageMap[base];
+  // 解码 URI（中文文件名在 md 中可能被 encode）
+  try {
+    const decoded = decodeURIComponent(normalized);
+    if (imageMap[decoded]) return imageMap[decoded];
+    const decodedBase = decoded.split("/").pop();
+    if (decodedBase && imageMap[decodedBase]) return imageMap[decodedBase];
+  } catch {
+    /* ignore */
+  }
+  return src;
+}
+
 // 处理行内 Markdown 语法
-function inlineMarkdown(text: string): string {
+function inlineMarkdown(text: string, imageMap?: Record<string, string>): string {
   return (
     text
       // 图片（必须在链接之前处理）
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_m, alt: string, src: string) => {
+        const resolved = resolveImageSrc(src.trim(), imageMap);
+        const escapedAlt = alt.replace(/"/g, "&quot;");
+        return `<img src="${resolved}" alt="${escapedAlt}" />`;
+      })
       // 链接
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
       // 粗斜体
@@ -427,8 +666,8 @@ function inlineMarkdown(text: string): string {
       .replace(/~~(.+?)~~/g, "<s>$1</s>")
       // 高亮
       .replace(/==(.+?)==/g, "<mark>$1</mark>")
-      // 行内代码
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      // 行内代码已废弃：剥离反引号，保留为纯文本（统一使用代码块）
+      .replace(/`([^`]+)`/g, "$1")
   );
 }
 
@@ -452,7 +691,7 @@ function textToHtml(text: string): string {
 
 // 根据来源转换内容为 TipTap JSON 字符串
 function convertToTiptapJson(fileInfo: ImportFileInfo): string {
-  const { content, source } = fileInfo;
+  const { content, source, imageMap } = fileInfo;
 
   let html: string;
   switch (source) {
@@ -468,7 +707,7 @@ function convertToTiptapJson(fileInfo: ImportFileInfo): string {
       break;
     case "md":
     default:
-      html = markdownToSimpleHtml(content);
+      html = markdownToSimpleHtml(content, imageMap);
       break;
   }
 
@@ -511,7 +750,8 @@ function extractPlainText(fileInfo: ImportFileInfo): string {
 export async function importNotes(
   fileInfos: ImportFileInfo[],
   notebookId?: string,
-  onProgress?: (p: ImportProgress) => void
+  onProgress?: (p: ImportProgress) => void,
+  options?: ImportOptions
 ): Promise<{ success: boolean; count: number }> {
   const selected = fileInfos.filter((f) => f.selected);
 
@@ -520,11 +760,22 @@ export async function importNotes(
     return { success: false, count: 0 };
   }
 
+  // 解析导入选项
+  // 当用户明确选了目标笔记本（notebookId）时，perFileNotebook 被忽略（保持 UI 层互斥约定的最终保险）
+  const perFileNotebook = !notebookId && !!options?.perFileNotebook;
+  const duplicateStrategy = options?.duplicateStrategy ?? "merge";
+  const fallbackNotebookName =
+    (options?.fallbackNotebookName && options.fallbackNotebookName.trim()) ||
+    DEFAULT_FALLBACK_NOTEBOOK_NAME;
+
+  // 批次内"名字 -> 已出现次数"，用于 duplicateStrategy=unique 时自动编号
+  const usedNotebookNames = new Map<string, number>();
+
   try {
     onProgress?.({ phase: "uploading", current: 0, total: selected.length, message: i18n.t('dataManager.uploadingProgress') });
 
     const notes = selected.map((f) => {
-      const note: { title: string; content: string; contentText: string; createdAt?: string; updatedAt?: string } = {
+      const note: { title: string; content: string; contentText: string; createdAt?: string; updatedAt?: string; notebookName?: string; notebookPath?: string[] } = {
         title: f.title,
         content: convertToTiptapJson(f),
         contentText: extractPlainText(f),
@@ -534,6 +785,30 @@ export async function importNotes(
         const dates = extractFrontmatterDates(f.content);
         if (dates.createdAt) note.createdAt = dates.createdAt;
         if (dates.updatedAt) note.updatedAt = dates.updatedAt;
+      }
+
+      // —— 决定该笔记的 notebookName / notebookPath ——
+      // 优先级：perFileNotebook（覆盖式） > zip 路径派生 f.notebookPath > 扁平 f.notebookName > 无
+      if (perFileNotebook) {
+        // 从原始文件名派生；失败则回退到标题；仍失败则用 fallback
+        const derived =
+          deriveNotebookNameFromFile(f.name) ||
+          deriveNotebookNameFromFile(f.title) ||
+          fallbackNotebookName;
+        const finalName =
+          duplicateStrategy === "unique"
+            ? uniquifyNotebookName(derived, usedNotebookNames)
+            : derived;
+        note.notebookName = finalName;
+        // per-file 模式下视为单层路径
+        note.notebookPath = [finalName];
+      } else if (f.notebookPath && f.notebookPath.length > 0) {
+        // zip 导入：透传完整层级路径，后端按层级逐级查找/创建
+        note.notebookPath = f.notebookPath;
+        note.notebookName = f.notebookPath[f.notebookPath.length - 1];
+      } else if (f.notebookName) {
+        // 向后兼容：没有 notebookPath 时仍透传单层名字
+        note.notebookName = f.notebookName;
       }
       return note;
     });

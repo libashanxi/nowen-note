@@ -13,14 +13,18 @@
     "electron:build": "npm run build:all && electron-builder --config electron/builder.config.js",
     "build:frontend": "cd frontend && npm run build",
     "build:backend": "cd backend && npm run build",
-    "build:all": "npm run build:backend && npm run build:frontend"
+    "build:all": "npm run build:backend && npm run build:frontend",
+    "zip": "node scripts/export-zip.mjs",
+    "zip:jszip": "node scripts/export-zip-jszip.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.2.0",
     "@capacitor/cli": "^7.6.0",
     "@capacitor/core": "^8.2.0",
+    "archiver": "^7.0.1",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
+    "jszip": "^3.10.1",
     "sharp": "^0.34.5"
   },
   "dependencies": {

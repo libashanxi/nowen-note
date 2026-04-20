@@ -14,3 +14,6 @@ $null
 *.apk
 generate-icons.js
 frontend/android/build_output.txt
+# 打包产物
+nowen-note-*.zip
+

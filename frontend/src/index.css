@@ -193,25 +193,378 @@ body {
   color: var(--pm-code-text);
   border-radius: 4px;
   padding: 0.15rem 0.4rem;
-  font-family: 'Cascadia Code', 'Fira Code', 'Source Code Pro', 'Menlo', 'Consolas', monospace;
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Source Code Pro', 'Menlo', 'Consolas', 'Courier New', monospace;
   font-size: 0.85em;
+  font-feature-settings: "liga" 0, "calt" 0;
 }
 
-.ProseMirror pre {
-  background: var(--pm-pre-bg);
-  border: 1px solid var(--pm-pre-border);
-  border-radius: 8px;
-  padding: 1rem;
-  margin: 0.75rem 0;
+/* ===== Code Block（自定义 NodeView：工具栏 + 语法高亮） =====
+ * 主题通过根 <html data-code-theme="..."> 切换，以下是默认变量（GitHub Dark）。
+ * 分享页使用相同的变量体系（.shared-note-content）。
+ */
+:root {
+  --code-bg: #0d1117;
+  --code-fg: #c9d1d9;
+  --code-toolbar-bg: #161b22;
+  --code-border: #30363d;
+  --code-muted: #8b949e;
+  --code-muted-strong: #e6edf3;
+  --code-selection: rgba(56, 139, 253, 0.4);
+  --code-hover-bg: #21262d;
+  --code-popup-bg: #161b22;
+  --code-popup-input-bg: #0d1117;
+  --code-popup-placeholder: #6e7681;
+  --code-popup-active-bg: rgba(31, 111, 235, 0.2);
+  --code-popup-active-fg: #58a6ff;
+  --code-copy-success-fg: #3fb950;
+  --code-copy-success-bg: rgba(35, 134, 54, 0.1);
+
+  /* 语法 token 颜色 */
+  --hl-comment: #8b949e;
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-built-in: #ffa657;
+  --hl-attr: #7ee787;
+  --hl-symbol: #79c0ff;
+  --hl-deletion-fg: #ffa198;
+  --hl-deletion-bg: rgba(248, 81, 73, 0.15);
+  --hl-addition-fg: #7ee787;
+  --hl-addition-bg: rgba(46, 160, 67, 0.15);
+  --hl-params: #c9d1d9;
+  --hl-meta: #8b949e;
+}
+
+/* --- 主题：GitHub Light --- */
+html[data-code-theme="github-light"] {
+  --code-bg: #f6f8fa;
+  --code-fg: #24292f;
+  --code-toolbar-bg: #eaeef2;
+  --code-border: #d0d7de;
+  --code-muted: #57606a;
+  --code-muted-strong: #24292f;
+  --code-selection: rgba(9, 105, 218, 0.2);
+  --code-hover-bg: #d0d7de;
+  --code-popup-bg: #ffffff;
+  --code-popup-input-bg: #f6f8fa;
+  --code-popup-placeholder: #8c959f;
+  --code-popup-active-bg: rgba(9, 105, 218, 0.12);
+  --code-popup-active-fg: #0969da;
+  --code-copy-success-fg: #1a7f37;
+  --code-copy-success-bg: rgba(26, 127, 55, 0.1);
+
+  --hl-comment: #6e7781;
+  --hl-keyword: #cf222e;
+  --hl-string: #0a3069;
+  --hl-number: #0550ae;
+  --hl-title: #8250df;
+  --hl-built-in: #953800;
+  --hl-attr: #116329;
+  --hl-symbol: #0550ae;
+  --hl-deletion-fg: #82071e;
+  --hl-deletion-bg: rgba(255, 129, 130, 0.2);
+  --hl-addition-fg: #116329;
+  --hl-addition-bg: rgba(46, 160, 67, 0.15);
+  --hl-params: #24292f;
+  --hl-meta: #6e7781;
+}
+
+/* --- 主题：One Dark（Atom） --- */
+html[data-code-theme="one-dark"] {
+  --code-bg: #282c34;
+  --code-fg: #abb2bf;
+  --code-toolbar-bg: #21252b;
+  --code-border: #3e4451;
+  --code-muted: #7f848e;
+  --code-muted-strong: #d7dae0;
+  --code-selection: rgba(82, 139, 255, 0.4);
+  --code-hover-bg: #3e4451;
+  --code-popup-bg: #21252b;
+  --code-popup-input-bg: #282c34;
+  --code-popup-placeholder: #5c6370;
+  --code-popup-active-bg: rgba(82, 139, 255, 0.2);
+  --code-popup-active-fg: #61afef;
+  --code-copy-success-fg: #98c379;
+  --code-copy-success-bg: rgba(152, 195, 121, 0.12);
+
+  --hl-comment: #5c6370;
+  --hl-keyword: #c678dd;
+  --hl-string: #98c379;
+  --hl-number: #d19a66;
+  --hl-title: #61afef;
+  --hl-built-in: #e5c07b;
+  --hl-attr: #d19a66;
+  --hl-symbol: #56b6c2;
+  --hl-deletion-fg: #e06c75;
+  --hl-deletion-bg: rgba(224, 108, 117, 0.15);
+  --hl-addition-fg: #98c379;
+  --hl-addition-bg: rgba(152, 195, 121, 0.15);
+  --hl-params: #abb2bf;
+  --hl-meta: #7f848e;
+}
+
+/* --- 主题：Dracula --- */
+html[data-code-theme="dracula"] {
+  --code-bg: #282a36;
+  --code-fg: #f8f8f2;
+  --code-toolbar-bg: #21222c;
+  --code-border: #44475a;
+  --code-muted: #6272a4;
+  --code-muted-strong: #f8f8f2;
+  --code-selection: rgba(189, 147, 249, 0.35);
+  --code-hover-bg: #44475a;
+  --code-popup-bg: #21222c;
+  --code-popup-input-bg: #282a36;
+  --code-popup-placeholder: #6272a4;
+  --code-popup-active-bg: rgba(189, 147, 249, 0.2);
+  --code-popup-active-fg: #bd93f9;
+  --code-copy-success-fg: #50fa7b;
+  --code-copy-success-bg: rgba(80, 250, 123, 0.1);
+
+  --hl-comment: #6272a4;
+  --hl-keyword: #ff79c6;
+  --hl-string: #f1fa8c;
+  --hl-number: #bd93f9;
+  --hl-title: #50fa7b;
+  --hl-built-in: #8be9fd;
+  --hl-attr: #50fa7b;
+  --hl-symbol: #bd93f9;
+  --hl-deletion-fg: #ff5555;
+  --hl-deletion-bg: rgba(255, 85, 85, 0.15);
+  --hl-addition-fg: #50fa7b;
+  --hl-addition-bg: rgba(80, 250, 123, 0.15);
+  --hl-params: #ffb86c;
+  --hl-meta: #6272a4;
+}
+
+/* --- 主题：Monokai --- */
+html[data-code-theme="monokai"] {
+  --code-bg: #272822;
+  --code-fg: #f8f8f2;
+  --code-toolbar-bg: #1e1f1a;
+  --code-border: #3e3d32;
+  --code-muted: #75715e;
+  --code-muted-strong: #f8f8f2;
+  --code-selection: rgba(73, 72, 62, 0.8);
+  --code-hover-bg: #3e3d32;
+  --code-popup-bg: #1e1f1a;
+  --code-popup-input-bg: #272822;
+  --code-popup-placeholder: #75715e;
+  --code-popup-active-bg: rgba(166, 226, 46, 0.2);
+  --code-popup-active-fg: #a6e22e;
+  --code-copy-success-fg: #a6e22e;
+  --code-copy-success-bg: rgba(166, 226, 46, 0.1);
+
+  --hl-comment: #75715e;
+  --hl-keyword: #f92672;
+  --hl-string: #e6db74;
+  --hl-number: #ae81ff;
+  --hl-title: #a6e22e;
+  --hl-built-in: #66d9ef;
+  --hl-attr: #a6e22e;
+  --hl-symbol: #ae81ff;
+  --hl-deletion-fg: #f92672;
+  --hl-deletion-bg: rgba(249, 38, 114, 0.15);
+  --hl-addition-fg: #a6e22e;
+  --hl-addition-bg: rgba(166, 226, 46, 0.15);
+  --hl-params: #fd971f;
+  --hl-meta: #75715e;
+}
+
+/* --- 主题：Nord --- */
+html[data-code-theme="nord"] {
+  --code-bg: #2e3440;
+  --code-fg: #d8dee9;
+  --code-toolbar-bg: #272b35;
+  --code-border: #3b4252;
+  --code-muted: #7b8494;
+  --code-muted-strong: #eceff4;
+  --code-selection: rgba(136, 192, 208, 0.3);
+  --code-hover-bg: #3b4252;
+  --code-popup-bg: #272b35;
+  --code-popup-input-bg: #2e3440;
+  --code-popup-placeholder: #616e88;
+  --code-popup-active-bg: rgba(136, 192, 208, 0.2);
+  --code-popup-active-fg: #88c0d0;
+  --code-copy-success-fg: #a3be8c;
+  --code-copy-success-bg: rgba(163, 190, 140, 0.12);
+
+  --hl-comment: #616e88;
+  --hl-keyword: #81a1c1;
+  --hl-string: #a3be8c;
+  --hl-number: #b48ead;
+  --hl-title: #88c0d0;
+  --hl-built-in: #8fbcbb;
+  --hl-attr: #8fbcbb;
+  --hl-symbol: #b48ead;
+  --hl-deletion-fg: #bf616a;
+  --hl-deletion-bg: rgba(191, 97, 106, 0.15);
+  --hl-addition-fg: #a3be8c;
+  --hl-addition-bg: rgba(163, 190, 140, 0.15);
+  --hl-params: #d8dee9;
+  --hl-meta: #7b8494;
+}
+
+/* --- 主题：Solarized Light --- */
+html[data-code-theme="solarized-light"] {
+  --code-bg: #fdf6e3;
+  --code-fg: #586e75;
+  --code-toolbar-bg: #eee8d5;
+  --code-border: #d5cdb3;
+  --code-muted: #93a1a1;
+  --code-muted-strong: #073642;
+  --code-selection: rgba(181, 137, 0, 0.2);
+  --code-hover-bg: #d5cdb3;
+  --code-popup-bg: #fdf6e3;
+  --code-popup-input-bg: #eee8d5;
+  --code-popup-placeholder: #93a1a1;
+  --code-popup-active-bg: rgba(38, 139, 210, 0.15);
+  --code-popup-active-fg: #268bd2;
+  --code-copy-success-fg: #859900;
+  --code-copy-success-bg: rgba(133, 153, 0, 0.1);
+
+  --hl-comment: #93a1a1;
+  --hl-keyword: #859900;
+  --hl-string: #2aa198;
+  --hl-number: #d33682;
+  --hl-title: #268bd2;
+  --hl-built-in: #b58900;
+  --hl-attr: #cb4b16;
+  --hl-symbol: #d33682;
+  --hl-deletion-fg: #dc322f;
+  --hl-deletion-bg: rgba(220, 50, 47, 0.1);
+  --hl-addition-fg: #859900;
+  --hl-addition-bg: rgba(133, 153, 0, 0.1);
+  --hl-params: #586e75;
+  --hl-meta: #93a1a1;
+}
+
+.ProseMirror .code-block-wrapper {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Source Code Pro', 'Menlo', 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  background: var(--code-bg) !important;
+  border-color: var(--code-border) !important;
+}
+
+/* 代码区外壳 */
+.ProseMirror .code-block-pre {
+  margin: 0 !important;
+  padding: 14px 16px !important;
+  background: var(--code-bg) !important;
+  border: none !important;
+  border-radius: 0 !important;
   overflow-x: auto;
 }
 
-.ProseMirror pre code {
+/* 代码内容 */
+.ProseMirror .code-block-content {
+  display: block;
+  color: var(--code-fg) !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  line-height: 1.65 !important;
+  white-space: pre !important;
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+/* 代码块内选中色 */
+.ProseMirror .code-block-content::selection,
+.ProseMirror .code-block-content *::selection {
+  background: var(--code-selection) !important;
+  color: inherit !important;
+}
+
+/* 工具栏 & 选择器（配合 CodeBlockView 的语义 class） */
+.ProseMirror .code-block-toolbar {
+  background: var(--code-toolbar-bg);
+  border-color: var(--code-border) !important;
+}
+
+.ProseMirror .code-block-tool-btn {
+  color: var(--code-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.ProseMirror .code-block-tool-btn:hover {
+  color: var(--code-muted-strong);
+  background: var(--code-hover-bg);
+}
+.ProseMirror .code-block-tool-btn.is-copied {
+  color: var(--code-copy-success-fg);
+  background: var(--code-copy-success-bg);
+}
+
+.ProseMirror .code-block-popup {
+  background: var(--code-popup-bg);
+  border-color: var(--code-border);
+  color: var(--code-muted-strong);
+}
+.ProseMirror .code-block-popup-title {
+  color: var(--code-muted);
+  border-color: var(--code-border) !important;
+}
+.ProseMirror .code-block-popup-input {
+  background: var(--code-popup-input-bg);
+  border-color: var(--code-border) !important;
+  color: var(--code-muted-strong);
+}
+.ProseMirror .code-block-popup-input::placeholder {
+  color: var(--code-popup-placeholder);
+}
+.ProseMirror .code-block-popup-empty {
+  color: var(--code-popup-placeholder);
+}
+.ProseMirror .code-block-popup-item {
+  color: var(--code-fg);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.ProseMirror .code-block-popup-item:hover {
+  background: var(--code-hover-bg);
+}
+.ProseMirror .code-block-popup-item.is-active {
+  background: var(--code-popup-active-bg);
+  color: var(--code-popup-active-fg);
+}
+
+.ProseMirror .code-block-wrapper {
+  transition: box-shadow 0.2s ease;
+}
+
+.ProseMirror .code-block-wrapper:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.dark .ProseMirror .code-block-wrapper:hover {
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* 兼容旧的 pre/code（非 NodeView 渲染时的降级样式） */
+.ProseMirror pre:not(.code-block-pre) {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 1rem 0;
+  overflow-x: auto;
+  color: var(--code-fg);
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Source Code Pro', 'Menlo', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.ProseMirror pre:not(.code-block-pre) code {
   background: none;
-  color: var(--pm-pre-text);
+  color: inherit;
   padding: 0;
-  font-size: 0.85rem;
-  line-height: 1.6;
+  font-size: inherit;
 }
 
 .ProseMirror hr {
@@ -220,15 +573,44 @@ body {
   margin: 1.5rem 0;
 }
 
-/* ===== Table 表格 ===== */
+/* ===== Table 表格（参考为知笔记：按内容自适应宽度，支持列宽拖拽） ===== */
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 1rem 0;
+  padding: 2px 0;
+}
+
 .ProseMirror table {
   border-collapse: collapse;
-  margin: 1rem 0;
-  width: 100%;
-  table-layout: auto;
-  overflow: hidden;
+  margin: 0;
+  width: auto;
+  max-width: 100%;
+  table-layout: fixed;
   border-radius: 6px;
   border: 1px solid var(--color-border);
+}
+
+/* 列宽拖拽手柄 */
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: var(--color-accent-primary, #3b82f6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 20;
+}
+
+.ProseMirror table:hover .column-resize-handle,
+.ProseMirror.resize-cursor .column-resize-handle {
+  opacity: 0.6;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
 }
 
 /* ===== 缩进级别 ===== */
@@ -243,13 +625,17 @@ body {
 
 .ProseMirror th,
 .ProseMirror td {
+  position: relative;
+  box-sizing: border-box;
   border: 1px solid var(--color-border);
   padding: 0.5rem 0.75rem;
   text-align: left;
   vertical-align: top;
-  min-width: 80px;
+  min-width: 60px;
   font-size: 0.875rem;
   line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .ProseMirror th {
@@ -301,7 +687,7 @@ body {
   display: flex !important;
   flex-direction: row !important;
   flex-wrap: nowrap !important;
-  align-items: flex-start;
+  align-items: center !important; /* 垂直居中对齐复选框与文字 */
   gap: 0.5rem;
   margin: 0.375rem 0;
   border-radius: 6px;
@@ -320,15 +706,23 @@ body {
   background-color: var(--color-hover);
 }
 
-/* Checkbox label 容器 */
+/* Checkbox label 容器 —— 强制 inline-flex，避免被 UA / tailwind preflight 置为 block 导致换行 */
 .ProseMirror li[data-type="taskItem"] > label {
-  display: flex;
+  display: inline-flex !important;
+  flex: 0 0 auto !important; /* 不参与伸缩，占自身宽度 */
   align-items: center;
   justify-content: center;
-  margin-top: 0.2rem;
+  margin: 0;
   cursor: pointer;
   user-select: none;
-  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* 文本节点 wrapper —— 占据剩余空间但不换到下一行 */
+.ProseMirror li[data-type="taskItem"] > div {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  display: block !important;
 }
 
 /* ===== 自定义 Checkbox 核心样式 ===== */
@@ -369,13 +763,10 @@ body {
   border-color: #4f46e5;
 }
 
-/* 文本内容区 */
+/* 文本内容区（保留过渡/outline，布局由上面的 > div 规则主导） */
 .ProseMirror li[data-type="taskItem"] > div {
-  flex: 1 1 0%;
-  min-width: 0;
   transition: all 0.2s ease;
   outline: none;
-  display: inline-block;
 }
 
 /* 已完成态：文字变灰 + 删除线 */
@@ -399,26 +790,109 @@ body {
   --task-done-strike: #52525b;
 }
 
-/* Highlight syntax colors - 这些在 dark 下才需要高对比 */
-.dark .hljs-keyword { color: #ff7b72; }
-.dark .hljs-string { color: #a5d6ff; }
-.dark .hljs-comment { color: #6e7681; }
-.dark .hljs-number { color: #79c0ff; }
-.dark .hljs-function { color: #d2a8ff; }
-.dark .hljs-title { color: #d2a8ff; }
-.dark .hljs-built_in { color: #ffa657; }
-.dark .hljs-attr { color: #79c0ff; }
-.dark .hljs-params { color: #c9d1d9; }
+/* ===== highlight.js 语法高亮配色（通过 CSS 变量支持多主题） =====
+ * 同时覆盖编辑器内代码块、降级 pre，以及分享页 .shared-note-content 内的代码块。
+ */
+.ProseMirror .code-block-content .hljs-comment,
+.ProseMirror .code-block-content .hljs-quote,
+.ProseMirror pre .hljs-comment,
+.ProseMirror pre .hljs-quote,
+.shared-note-content .shared-code-content .hljs-comment,
+.shared-note-content .shared-code-content .hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.ProseMirror .code-block-content .hljs-keyword,
+.ProseMirror .code-block-content .hljs-selector-tag,
+.ProseMirror .code-block-content .hljs-literal,
+.ProseMirror .code-block-content .hljs-doctag,
+.ProseMirror .code-block-content .hljs-subst,
+.ProseMirror pre .hljs-keyword,
+.ProseMirror pre .hljs-selector-tag,
+.shared-note-content .shared-code-content .hljs-keyword,
+.shared-note-content .shared-code-content .hljs-selector-tag,
+.shared-note-content .shared-code-content .hljs-literal,
+.shared-note-content .shared-code-content .hljs-doctag,
+.shared-note-content .shared-code-content .hljs-subst {
+  color: var(--hl-keyword);
+}
+.ProseMirror .code-block-content .hljs-string,
+.ProseMirror .code-block-content .hljs-meta .hljs-string,
+.ProseMirror .code-block-content .hljs-regexp,
+.ProseMirror pre .hljs-string,
+.shared-note-content .shared-code-content .hljs-string,
+.shared-note-content .shared-code-content .hljs-regexp {
+  color: var(--hl-string);
+}
+.ProseMirror .code-block-content .hljs-number,
+.ProseMirror .code-block-content .hljs-variable,
+.ProseMirror .code-block-content .hljs-template-variable,
+.ProseMirror .code-block-content .hljs-tag .hljs-attr,
+.ProseMirror pre .hljs-number,
+.shared-note-content .shared-code-content .hljs-number,
+.shared-note-content .shared-code-content .hljs-variable,
+.shared-note-content .shared-code-content .hljs-template-variable {
+  color: var(--hl-number);
+}
+.ProseMirror .code-block-content .hljs-title,
+.ProseMirror .code-block-content .hljs-title.function_,
+.ProseMirror .code-block-content .hljs-function .hljs-title,
+.ProseMirror .code-block-content .hljs-section,
+.ProseMirror pre .hljs-title,
+.ProseMirror pre .hljs-function,
+.shared-note-content .shared-code-content .hljs-title,
+.shared-note-content .shared-code-content .hljs-section {
+  color: var(--hl-title);
+  font-weight: 500;
+}
+.ProseMirror .code-block-content .hljs-built_in,
+.ProseMirror .code-block-content .hljs-builtin-name,
+.ProseMirror .code-block-content .hljs-type,
+.ProseMirror pre .hljs-built_in,
+.shared-note-content .shared-code-content .hljs-built_in,
+.shared-note-content .shared-code-content .hljs-builtin-name,
+.shared-note-content .shared-code-content .hljs-type {
+  color: var(--hl-built-in);
+}
+.ProseMirror .code-block-content .hljs-attr,
+.ProseMirror .code-block-content .hljs-attribute,
+.ProseMirror .code-block-content .hljs-name,
+.ProseMirror pre .hljs-attr,
+.shared-note-content .shared-code-content .hljs-attr,
+.shared-note-content .shared-code-content .hljs-attribute,
+.shared-note-content .shared-code-content .hljs-name {
+  color: var(--hl-attr);
+}
+.ProseMirror .code-block-content .hljs-symbol,
+.ProseMirror .code-block-content .hljs-bullet,
+.ProseMirror .code-block-content .hljs-link,
+.ProseMirror .code-block-content .hljs-selector-class,
+.ProseMirror .code-block-content .hljs-selector-id,
+.shared-note-content .shared-code-content .hljs-symbol,
+.shared-note-content .shared-code-content .hljs-bullet,
+.shared-note-content .shared-code-content .hljs-link {
+  color: var(--hl-symbol);
+}
+.ProseMirror .code-block-content .hljs-emphasis,
+.shared-note-content .shared-code-content .hljs-emphasis { font-style: italic; }
+.ProseMirror .code-block-content .hljs-strong,
+.shared-note-content .shared-code-content .hljs-strong { font-weight: 700; }
+.ProseMirror .code-block-content .hljs-deletion,
+.shared-note-content .shared-code-content .hljs-deletion {
+  color: var(--hl-deletion-fg);
+  background-color: var(--hl-deletion-bg);
+}
+.ProseMirror .code-block-content .hljs-addition,
+.shared-note-content .shared-code-content .hljs-addition {
+  color: var(--hl-addition-fg);
+  background-color: var(--hl-addition-bg);
+}
+.ProseMirror .code-block-content .hljs-params,
+.shared-note-content .shared-code-content .hljs-params { color: var(--hl-params); }
+.ProseMirror .code-block-content .hljs-meta,
+.shared-note-content .shared-code-content .hljs-meta { color: var(--hl-meta); }
 
-:root .hljs-keyword { color: #d73a49; }
-:root .hljs-string { color: #032f62; }
-:root .hljs-comment { color: #6a737d; }
-:root .hljs-number { color: #005cc5; }
-:root .hljs-function { color: #6f42c1; }
-:root .hljs-title { color: #6f42c1; }
-:root .hljs-built_in { color: #e36209; }
-:root .hljs-attr { color: #005cc5; }
-:root .hljs-params { color: #24292e; }
+/* 清理旧版简易 hljs 色（被覆盖，但保留避免影响其他位置） */
 
 /* Highlight mark */
 .highlight-mark {
@@ -539,4 +1013,126 @@ body {
   .ProseMirror {
     min-height: 200px;
   }
+}
+
+/* ===== 分享页代码块（视觉与编辑器 CodeBlockView 一致，通过 CSS 变量支持多主题） ===== */
+.shared-note-content .shared-code-block {
+  margin: 1rem 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--code-border);
+  background: var(--code-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Source Code Pro', 'Menlo', 'Consolas', 'Courier New', monospace;
+}
+
+.shared-note-content .shared-code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--code-toolbar-bg);
+  border-bottom: 1px solid var(--code-border);
+  user-select: none;
+}
+
+.shared-note-content .shared-code-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shared-note-content .shared-code-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shared-note-content .shared-code-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.shared-note-content .shared-code-lang {
+  font-size: 11px;
+  font-family: inherit;
+  color: var(--code-muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.shared-note-content .shared-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--code-muted);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.shared-note-content .shared-code-copy:hover {
+  color: var(--code-muted-strong);
+  background: var(--code-hover-bg);
+}
+
+.shared-note-content .shared-code-copy[data-copied="1"] {
+  color: var(--code-copy-success-fg);
+  background: var(--code-copy-success-bg);
+}
+
+.shared-note-content .shared-code-copy[data-copied="1"] .shared-code-copy-label::after {
+  content: "已复制";
+}
+.shared-note-content .shared-code-copy[data-copied="1"] .shared-code-copy-label {
+  font-size: 0;
+}
+.shared-note-content .shared-code-copy[data-copied="1"] .shared-code-copy-label::after {
+  font-size: 11px;
+}
+
+.shared-note-content .shared-code-pre {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--code-bg);
+  overflow-x: auto;
+}
+
+.shared-note-content .shared-code-content {
+  display: block;
+  color: var(--code-fg);
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre;
+  tab-size: 4;
+  -moz-tab-size: 4;
+}
+
+/* 覆盖 tailwind typography 的 prose 对代码块的默认样式 */
+.shared-note-content .shared-code-block :where(code):not(:where([class~="not-prose"] *)) {
+  background: transparent !important;
+  color: inherit !important;
+  padding: 0 !important;
+  font-weight: inherit !important;
+}
+.shared-note-content .shared-code-block :where(code):not(:where([class~="not-prose"] *))::before,
+.shared-note-content .shared-code-block :where(code):not(:where([class~="not-prose"] *))::after {
+  content: none !important;
+}
+.shared-note-content .shared-code-block :where(pre):not(:where([class~="not-prose"] *)) {
+  background: var(--code-bg) !important;
+  color: var(--code-fg) !important;
+  padding: 14px 16px !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
 }

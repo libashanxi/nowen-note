@@ -31,6 +31,12 @@ export default function DataManager() {
   const [isImporting, setIsImporting] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedNotebookId, setSelectedNotebookId] = useState<string>("");
+  // 新增：是否"为每个文件创建以文件名命名的外层笔记本"
+  const [perFileNotebook, setPerFileNotebook] = useState(false);
+  // 新增：同名笔记本处理策略 - "merge" 合并 / "unique" 自动编号
+  const [duplicateStrategy, setDuplicateStrategy] = useState<"merge" | "unique">("merge");
+  // 当前导入批次是否包含 zip（zip 本身按目录派生笔记本，不需要 perFile 开关）
+  const [hasZip, setHasZip] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 全量导出
@@ -75,8 +81,10 @@ export default function DataManager() {
 
     if (zipFile) {
       result = await readMarkdownFromZip(zipFile);
+      setHasZip(true);
     } else {
       result = await readMarkdownFiles(files);
+      setHasZip(false);
     }
 
     setImportFiles(result);
@@ -96,10 +104,16 @@ export default function DataManager() {
   const handleImport = async () => {
     setIsImporting(true);
     setImportProgress(null);
+    // perFileNotebook 与 selectedNotebookId 互斥：只要选了具体笔记本，就不启用 per-file
+    const usePerFile = !selectedNotebookId && perFileNotebook;
     const result = await importNotes(
       importFiles,
       selectedNotebookId || undefined,
-      (p) => setImportProgress(p)
+      (p) => setImportProgress(p),
+      {
+        perFileNotebook: usePerFile,
+        duplicateStrategy,
+      }
     );
     setIsImporting(false);
 
@@ -108,6 +122,7 @@ export default function DataManager() {
       setTimeout(() => {
         setImportFiles([]);
         setImportProgress(null);
+        setHasZip(false);
       }, 3000);
     }
   };
@@ -115,6 +130,7 @@ export default function DataManager() {
   const clearImportList = () => {
     setImportFiles([]);
     setImportProgress(null);
+    setHasZip(false);
   };
 
   const selectedCount = importFiles.filter((f) => f.selected).length;
@@ -314,6 +330,61 @@ export default function DataManager() {
                   ))}
                 </select>
               </div>
+
+              {/* 按文件名建笔记本 —— 仅对散文件生效 */}
+              {!hasZip && (
+                <div className="mb-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/40 p-3">
+                  <label
+                    className={`flex items-start gap-2.5 cursor-pointer ${
+                      selectedNotebookId ? "opacity-50 cursor-not-allowed" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={perFileNotebook && !selectedNotebookId}
+                      disabled={!!selectedNotebookId}
+                      onChange={(e) => setPerFileNotebook(e.target.checked)}
+                      className="mt-0.5 w-3.5 h-3.5 rounded border-zinc-300 dark:border-zinc-600 text-indigo-500 focus:ring-indigo-500/30"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-zinc-700 dark:text-zinc-300 font-medium">
+                        {t('dataManager.perFileNotebook')}
+                      </div>
+                      <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+                        {t('dataManager.perFileNotebookHint')}
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* 同名处理策略 —— 只有启用 perFile 时才显示 */}
+                  {perFileNotebook && !selectedNotebookId && (
+                    <div className="mt-2.5 pl-6 flex flex-col gap-1.5">
+                      <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="dup-strategy"
+                          value="merge"
+                          checked={duplicateStrategy === "merge"}
+                          onChange={() => setDuplicateStrategy("merge")}
+                          className="w-3.5 h-3.5 text-indigo-500 focus:ring-indigo-500/30"
+                        />
+                        {t('dataManager.duplicateMerge')}
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="dup-strategy"
+                          value="unique"
+                          checked={duplicateStrategy === "unique"}
+                          onChange={() => setDuplicateStrategy("unique")}
+                          className="w-3.5 h-3.5 text-indigo-500 focus:ring-indigo-500/30"
+                        />
+                        {t('dataManager.duplicateUnique')}
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="max-h-48 overflow-y-auto space-y-1 rounded-lg border border-zinc-200 dark:border-zinc-800 p-2">
                 {importFiles.map((file, idx) => (

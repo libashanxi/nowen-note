@@ -3,7 +3,7 @@ import { Editor, Extension } from "@tiptap/react";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import {
   Heading1, Heading2, Heading3, List, ListOrdered, CheckSquare,
-  Quote, Code, FileCode, Minus, ImagePlus, Sparkles,
+  Quote, FileCode, Minus, ImagePlus, Sparkles,
   Bold, Italic, Highlighter, Table2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -271,15 +271,6 @@ export function getDefaultSlashCommands(t: (key: string) => string, onImageUploa
       category: t("slash.catInline"),
       keywords: ["highlight", "mark", "高亮", "标记"],
       action: (editor) => editor.chain().focus().toggleHighlight().run(),
-    },
-    {
-      id: "inlineCode",
-      label: t("slash.inlineCode"),
-      description: t("slash.inlineCodeDesc"),
-      icon: <Code size={16} />,
-      category: t("slash.catInline"),
-      keywords: ["code", "inline", "行内代码"],
-      action: (editor) => editor.chain().focus().toggleCode().run(),
     },
     // 插入
     {

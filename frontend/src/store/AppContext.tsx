@@ -38,6 +38,8 @@ type Action =
   | { type: "SET_NOTELIST_WIDTH"; payload: number }
   | { type: "SET_LOADING"; payload: boolean }
   | { type: "UPDATE_NOTE_IN_LIST"; payload: Partial<NoteListItem> & { id: string } }
+  | { type: "REMOVE_NOTE_FROM_LIST"; payload: string }
+  | { type: "ADD_NOTE_TO_LIST"; payload: NoteListItem }
   | { type: "SET_SYNC_STATUS"; payload: SyncStatus }
   | { type: "SET_LAST_SYNCED"; payload: string }
   | { type: "SET_MOBILE_VIEW"; payload: MobileView }
@@ -133,6 +135,16 @@ function reducer(state: AppState, action: Action): AppState {
           n.id === action.payload.id ? { ...n, ...action.payload } : n
         ),
       };
+    case "REMOVE_NOTE_FROM_LIST":
+      return {
+        ...state,
+        notes: state.notes.filter((n) => n.id !== action.payload),
+      };
+    case "ADD_NOTE_TO_LIST":
+      return {
+        ...state,
+        notes: [action.payload, ...state.notes],
+      };
     case "SET_SYNC_STATUS":
       return { ...state, syncStatus: action.payload };
     case "SET_LAST_SYNCED":
@@ -183,6 +195,8 @@ export function useAppActions() {
     setNoteListWidth: useCallback((v: number) => dispatch({ type: "SET_NOTELIST_WIDTH", payload: v }), [dispatch]),
     setLoading: useCallback((v: boolean) => dispatch({ type: "SET_LOADING", payload: v }), [dispatch]),
     updateNoteInList: useCallback((v: Partial<NoteListItem> & { id: string }) => dispatch({ type: "UPDATE_NOTE_IN_LIST", payload: v }), [dispatch]),
+    removeNoteFromList: useCallback((id: string) => dispatch({ type: "REMOVE_NOTE_FROM_LIST", payload: id }), [dispatch]),
+    addNoteToList: useCallback((v: NoteListItem) => dispatch({ type: "ADD_NOTE_TO_LIST", payload: v }), [dispatch]),
     setSyncStatus: useCallback((v: SyncStatus) => dispatch({ type: "SET_SYNC_STATUS", payload: v }), [dispatch]),
     setLastSynced: useCallback((v: string) => dispatch({ type: "SET_LAST_SYNCED", payload: v }), [dispatch]),
     setMobileView: useCallback((v: MobileView) => dispatch({ type: "SET_MOBILE_VIEW", payload: v }), [dispatch]),
