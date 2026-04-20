@@ -7,6 +7,7 @@ A self-hosted private knowledge base, inspired by Synology Note Station.
 ---
 
 ## 中文文档
+## 问题反馈QQ群：1093473044
 
 ### 简介
 
