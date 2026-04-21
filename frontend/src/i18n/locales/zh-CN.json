@@ -18,7 +18,12 @@
     "noteCount": "{{count}} 条笔记",
     "noNotes": "暂无笔记",
     "noNotesHint": "点击下方按钮创建你的第一篇笔记",
-    "newNote": "新建笔记"
+    "newNote": "新建笔记",
+    "needNotebookFirst": "请先创建一个笔记本再新建笔记",
+    "needNotebookFirstTitle": "暂无笔记本",
+    "createNotebookNow": "创建笔记本",
+    "selectNotebook": "选择笔记本",
+    "selectNotebookHint": "请选择这篇笔记所属的笔记本"
   },
   "auth": {
     "verifying": "正在验证身份...",
