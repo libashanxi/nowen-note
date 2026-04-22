@@ -429,7 +429,10 @@ storeFile=你的keystore路径
 
 #### 笔记管理
 - **三栏布局**：侧边栏 + 笔记列表 + 编辑器（均支持拖拽调整宽度，双击恢复默认）
-- **Tiptap 富文本编辑器**：Markdown 快捷键、代码高亮、图片插入、任务列表
+- **双编辑器引擎**：
+  - **Tiptap 富文本编辑器（默认）**：Markdown 快捷键、代码高亮、图片插入、任务列表
+  - **Markdown 编辑器（可切换）**：基于 CodeMirror 6 + @codemirror/lang-markdown，纯 Markdown 源码编辑，斜杠菜单、行内 AI 助手浮层、快捷键（加粗/斜体/标题/列表等），与 Tiptap 共享 AI 写作助手、版本历史、评论批注等所有上层能力
+  - **切换方式**：编辑器工具栏右上角 `MD` / `RTE` 徽标按钮一键切换；或 URL 追加 `?md=1`（强制 MD）/ `?md=0`（强制 Tiptap）；选择会记住到 `localStorage["nowen.editor_mode"]`
 - **笔记操作**：置顶、收藏、锁定（前后端双层保护）、软删除（回收站）、恢复、永久删除
 - **笔记移动**：右键菜单"移动到..."弹窗（树形笔记本选择器）、编辑器顶栏快速切换笔记本
 - **字数统计**：实时显示词数和字符数（中文按字计数，英文按空格分词）
@@ -811,6 +814,48 @@ GET http://localhost:3001/api/openapi.json
 | `npm run electron:dev` | Electron 开发运行 |
 | `npm run electron:build` | Electron 打包发布 |
 
+### 数据迁移脚本
+
+项目提供一个一次性迁移脚本 `scripts/migrate-tiptap-to-md.mjs`，用于将历史 Tiptap JSON 笔记批量转换为 Markdown 格式（配合 Markdown 编辑器使用）。
+
+**运行前提：**
+- 已安装后端依赖（含 `better-sqlite3`）
+- **强烈建议先停掉后端服务**，避免写入冲突
+- `--apply` 模式会先生成 `<dbfile>.bak-<时间戳>` 的全库备份
+
+**常用命令：**
+
+```bash
+# 1. 预览（默认 dry-run，只打印会改动的笔记摘要，不写库）
+node scripts/migrate-tiptap-to-md.mjs
+
+# 2. 指定数据库路径预览
+node scripts/migrate-tiptap-to-md.mjs --db backend/data/nowen-note.db
+
+# 3. 仅处理指定笔记 ID
+node scripts/migrate-tiptap-to-md.mjs --ids abc123,def456 --verbose
+
+# 4. 仅处理前 50 条用于抽样验证
+node scripts/migrate-tiptap-to-md.mjs --limit 50 --verbose
+
+# 5. 真正写入（会先自动备份 DB）
+node scripts/migrate-tiptap-to-md.mjs --apply
+```
+
+**参数说明：**
+
+| 参数 | 说明 |
+|------|------|
+| `--db <path>` | 指定 SQLite 路径，默认按 `$DB_PATH` → `backend/data/nowen-note.db` |
+| `--dry-run` | 只预览（默认行为），不写库 |
+| `--apply` | 真正执行写入，会自动创建 `.bak-<timestamp>` 备份 |
+| `--limit N` | 最多处理 N 条笔记 |
+| `--ids a,b,c` | 仅处理指定笔记 ID（逗号分隔） |
+| `--verbose` | 打印每条笔记的转换细节 |
+| `--help` | 显示帮助 |
+
+脚本只修改 `notes.content` 字段；`contentText` 保持原值，FTS5 全文搜索索引不受影响。识别为 `empty` / `md` / `html` 的笔记会自动跳过。
+
 ### Docker Compose 架构
 
 ```
@@ -1059,7 +1104,10 @@ All NAS platforms with Docker support follow the same general steps:
 
 #### Note Management
 - **Three-column layout**: Sidebar + Note List + Editor (all resizable via drag, double-click to reset)
-- **Tiptap rich-text editor**: Markdown shortcuts, code highlighting, image upload, task lists
+- **Dual editor engines**:
+  - **Tiptap rich-text editor (default)**: Markdown shortcuts, code highlighting, image upload, task lists
+  - **Markdown editor (switchable)**: Built on CodeMirror 6 + @codemirror/lang-markdown, pure Markdown source editing with slash menu, inline AI assistant popover, keyboard shortcuts (bold/italic/heading/list, etc.). Shares the same AI writing assistant, version history, comments, and all higher-level features with Tiptap
+  - **How to switch**: Click the `MD` / `RTE` badge button on the top-right of the editor toolbar; or append `?md=1` (force MD) / `?md=0` (force Tiptap) to the URL. The preference is persisted to `localStorage["nowen.editor_mode"]`
 - **Note operations**: Pin, favorite, lock (frontend + backend dual-layer protection), soft delete (trash), restore, permanent delete
 - **Move notes**: Right-click "Move to..." modal (tree notebook selector) + quick notebook switch in editor header
 - **Word count**: Real-time word and character count (CJK characters counted individually, English by whitespace)
@@ -1440,6 +1488,48 @@ Covers 16 API groups, 50+ endpoints, with full request/response schema definitio
 | `npm run build:backend` | Build backend only |
 | `npm run electron:dev` | Run Electron in development mode |
 | `npm run electron:build` | Build Electron for release |
+
+### Data Migration Script
+
+A one-time migration script `scripts/migrate-tiptap-to-md.mjs` is provided to batch convert legacy Tiptap JSON notes into Markdown (for use with the Markdown editor).
+
+**Prerequisites:**
+- Backend dependencies installed (including `better-sqlite3`)
+- **Strongly recommended to stop the backend service first** to avoid write conflicts
+- `--apply` mode automatically creates a full DB backup at `<dbfile>.bak-<timestamp>` before writing
+
+**Common commands:**
+
+```bash
+# 1. Preview (default dry-run, prints summary of affected notes, no writes)
+node scripts/migrate-tiptap-to-md.mjs
+
+# 2. Preview against a specific DB path
+node scripts/migrate-tiptap-to-md.mjs --db backend/data/nowen-note.db
+
+# 3. Process only specific note IDs
+node scripts/migrate-tiptap-to-md.mjs --ids abc123,def456 --verbose
+
+# 4. Process only the first 50 notes for sampling
+node scripts/migrate-tiptap-to-md.mjs --limit 50 --verbose
+
+# 5. Actually write (auto-creates .bak backup first)
+node scripts/migrate-tiptap-to-md.mjs --apply
+```
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--db <path>` | SQLite path. Defaults to `$DB_PATH` → `backend/data/nowen-note.db` |
+| `--dry-run` | Preview only (default), no writes |
+| `--apply` | Actually write changes, creates `.bak-<timestamp>` backup automatically |
+| `--limit N` | Process at most N notes |
+| `--ids a,b,c` | Process only specific note IDs (comma-separated) |
+| `--verbose` | Print conversion details for each note |
+| `--help` | Show help |
+
+The script only modifies the `notes.content` field; `contentText` is untouched so the FTS5 full-text search index is unaffected. Notes detected as `empty` / `md` / `html` are automatically skipped.
 
 ### Docker Compose Architecture
 

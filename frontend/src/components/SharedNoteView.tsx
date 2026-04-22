@@ -5,7 +5,10 @@ import { api } from "@/lib/api";
 import { ShareInfo, SharedNoteContent, ShareComment, Note } from "@/types";
 import { cn } from "@/lib/utils";
 import { common, createLowlight } from "lowlight";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import TiptapEditor from "@/components/TiptapEditor";
+import { detectFormat } from "@/lib/contentFormat";
 
 // 分享页独立的 lowlight 实例（与编辑器保持一致的 common 语法集合）
 const sharedLowlight = createLowlight(common);
@@ -583,6 +586,23 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
               isGuest
             />
           </div>
+        ) : detectFormat(content.content) === "md" ? (
+          // 新编辑器保存的 Markdown：用 react-markdown 渲染
+          <div
+            className="shared-note-content prose prose-sm dark:prose-invert max-w-none
+              prose-headings:text-zinc-800 dark:prose-headings:text-zinc-200
+              prose-p:text-zinc-600 dark:prose-p:text-zinc-300
+              prose-a:text-indigo-500
+              prose-code:text-indigo-600 dark:prose-code:text-indigo-400
+              prose-blockquote:border-indigo-300 dark:prose-blockquote:border-indigo-700
+              prose-pre:bg-zinc-900 prose-pre:text-zinc-100
+              prose-img:rounded-lg prose-img:border prose-img:border-zinc-200 dark:prose-img:border-zinc-800"
+            onClick={handleSharedContentClick}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content.content}
+            </ReactMarkdown>
+          </div>
         ) : (
           <div
             className="shared-note-content prose prose-sm dark:prose-invert max-w-none
@@ -720,21 +740,37 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
  * 将编辑器的 JSON content 渲染为 HTML
  * 如果 content 是 JSON 格式（Tiptap），尝试简单渲染
  * 如果是纯 HTML 字符串，直接返回
+ *
+ * 注意：此函数会被 dangerouslySetInnerHTML 消费，任何抛出都会让分享页白屏。
+ * 因此无论 JSON 解析还是 Tiptap 节点遍历失败，都要兜底返回可显示的文本。
  */
 function renderContent(content: string): string {
   if (!content) return "";
 
+  const trimmed = content.trim();
+
   // 尝试解析 JSON (Tiptap editor JSON format)
-  try {
-    const json = JSON.parse(content);
-    if (json.type === "doc" && json.content) {
-      return renderTiptapJSON(json);
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const json = JSON.parse(trimmed);
+      if (json && typeof json === "object" && json.type === "doc" && json.content) {
+        try {
+          return renderTiptapJSON(json);
+        } catch (err) {
+          console.error("[SharedNoteView] renderTiptapJSON failed, fallback to escaped text:", err);
+          return `<p>${escapeHtml(content)}</p>`;
+        }
+      }
+    } catch {
+      // 不是合法 JSON，继续当作 HTML / 纯文本处理
     }
-  } catch {
-    // 不是 JSON，当作 HTML 处理
   }
 
-  return content;
+  // 如果明显是 HTML（<tag> 开头），直接透传；否则做转义后包一层 <p>
+  if (trimmed.startsWith("<") && /<\w+[\s>]/.test(trimmed)) {
+    return content;
+  }
+  return `<p>${escapeHtml(content)}</p>`;
 }
 
 /** 简单的 Tiptap JSON → HTML 渲染器 */

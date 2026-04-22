@@ -1,18 +1,44 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, X, ListTree, Lock, Unlock, Tag as TagIcon, Type, MoreHorizontal, Share2, History, MessageCircle } from "lucide-react";
+import { Star, Pin, Trash2, Cloud, CloudOff, RefreshCw, Check, Loader2, ChevronLeft, FolderInput, ChevronRight, ChevronDown, X, ListTree, Lock, Unlock, Tag as TagIcon, Type, MoreHorizontal, Share2, History, MessageCircle, FileCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import TiptapEditor, { HeadingItem } from "@/components/TiptapEditor";
+import MarkdownEditor from "@/components/MarkdownEditor";
+import type { NoteEditorHandle } from "@/components/editors/types";
 import { useApp, useAppActions, SyncStatus } from "@/store/AppContext";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Tag, Notebook } from "@/types";
 import { useTranslation } from "react-i18next";
 import { haptic } from "@/hooks/useCapacitor";
+import { toast } from "@/lib/toast";
 import ShareModal from "@/components/ShareModal";
 import VersionHistoryPanel from "@/components/VersionHistoryPanel";
 import CommentPanel from "@/components/CommentPanel";
+
+// ---------------------------------------------------------------------------
+// 编辑器模式切换（MD vs Tiptap）
+// ---------------------------------------------------------------------------
+// - URL 带 `?md=1` 强制启用 MarkdownEditor（便于对比测试）
+// - 否则读 localStorage["nowen.editor_mode"]: "md" | "tiptap"，默认 "tiptap"
+// 两者 props 完全一致，切换零风险
+const EDITOR_MODE_KEY = "nowen.editor_mode";
+
+function resolveEditorMode(): "md" | "tiptap" {
+  try {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("md") === "1") return "md";
+      if (sp.get("md") === "0") return "tiptap";
+      const stored = localStorage.getItem(EDITOR_MODE_KEY);
+      if (stored === "md" || stored === "tiptap") return stored;
+    }
+  } catch {
+    /* SSR / 无 localStorage */
+  }
+  return "tiptap";
+}
 
 export default function EditorPane() {
   const { state } = useApp();
@@ -33,6 +59,72 @@ export default function EditorPane() {
   const [showCommentPanel, setShowCommentPanel] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // 编辑器模式（MD / Tiptap）——初值来自 URL / localStorage，运行时可切换
+  const [editorMode, setEditorMode] = useState<"md" | "tiptap">(() => resolveEditorMode());
+  /**
+   * 当前编辑器（Tiptap 或 Markdown）暴露的命令式句柄。
+   * EditorPane 只在需要"立即 flush"的临界点使用（切换编辑器、切换笔记、卸载前），
+   * 日常数据流依然靠 onUpdate 回调。
+   */
+  const editorHandleRef = useRef<NoteEditorHandle | null>(null);
+
+  /**
+   * 切换 MD ↔ Tiptap。这里要做四件事：
+   *   1) flush 当前编辑器的 debounce pending（防止最近几百毫秒输入丢失）
+   *   2) 写入 localStorage 持久化用户选择
+   *   3) 若 URL 上还带着 `?md=1` / `?md=0` 的强制覆盖标记，清掉它，
+   *      否则刷新页面还是回到强制模式，用户会困惑
+   *   4) 用 toast 明确反馈，避免用户以为笔记内容丢了
+   */
+  const toggleEditorMode = useCallback(() => {
+    try {
+      editorHandleRef.current?.flushSave();
+    } catch (err) {
+      console.warn("[EditorPane] flushSave before switch failed:", err);
+    }
+    setEditorMode((prev) => {
+      const next = prev === "md" ? "tiptap" : "md";
+      try { localStorage.setItem(EDITOR_MODE_KEY, next); } catch { /* ignore */ }
+      // 清理 URL 上的 ?md= 强制标记，保证后续刷新以 localStorage 为准
+      try {
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has("md")) {
+            url.searchParams.delete("md");
+            window.history.replaceState(null, "", url.pathname + (url.search || "") + url.hash);
+          }
+        }
+      } catch { /* ignore */ }
+      try {
+        toast.success(next === "md" ? "已切换到 Markdown 编辑器" : "已切换到富文本编辑器");
+      } catch { /* toast 不可用也没关系 */ }
+      return next;
+    });
+  }, []);
+
+  /**
+   * 切换笔记（activeNote.id 变化）前，也把当前编辑器的 debounce 立刻刷一次，
+   * 防止"写到一半切走 → 500ms 内丢字"。
+   */
+  const lastActiveIdRef = useRef<string | null>(activeNote?.id ?? null);
+  useEffect(() => {
+    const prevId = lastActiveIdRef.current;
+    const nextId = activeNote?.id ?? null;
+    if (prevId && prevId !== nextId) {
+      try { editorHandleRef.current?.flushSave(); } catch { /* ignore */ }
+    }
+    lastActiveIdRef.current = nextId;
+  }, [activeNote?.id]);
+
+  // 窗口卸载前兜底 flush（刷新、关闭标签）
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      try { editorHandleRef.current?.flushSave(); } catch { /* ignore */ }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   // Delete 键删除笔记快捷键（仅在编辑器未聚焦时生效）
   useEffect(() => {
@@ -81,15 +173,29 @@ export default function EditorPane() {
       } as any);
       // 仅在保存的笔记仍是当前激活笔记时更新状态（防止快速切换时覆盖错误笔记）
       if (activeNoteRef.current?.id === updated.id) {
-        // 只合并服务端返回的元数据（version, updatedAt, title），不覆盖 content / contentText。
-        // 原因：编辑器本身才是 content 的权威来源，此时用户可能还在继续输入，
-        // 若把 data.content 回塞到 activeNote，会让 activeNote 引用变化 → EditorPane re-render，
-        // 在极个别时序下可能引起光标定位抖动（跳行）。此处只保留元数据同步。
+        // 关键：必须把刚保存的 content / contentText 也回填到 activeNote。
+        //
+        // 背景（为什么之前只回填元数据）：曾经担心 content 回填会让 activeNote
+        // 引用变化 → TiptapEditor 的 useEffect([note.content]) 触发 setContent
+        // → 光标/输入被打断。所以之前只回填 version/updatedAt/title。
+        //
+        // 但这在"切换编辑器 (MD ↔ RTE)"场景下是致命 bug：
+        //   - MD 编辑器保存 → activeNote.content 仍是旧 Tiptap JSON（未刷新）
+        //   - 切到 Tiptap → TiptapEditor 读 note.content → 读到的是旧 JSON
+        //     → 用户在 MD 里做的所有修改完全"消失"
+        //   - 反向同理
+        // 表现为"来回切换就丢内容、后续修改也被清空"。
+        //
+        // 解决办法：这里必须回填。编辑器侧通过 lastEmittedContentRef 守卫，
+        // 比较 note.content 是否等于自己上次派出去的那份，是就跳过 setContent，
+        // 避免光标抖动；不是（来自另一个编辑器或版本恢复）就正常同步。
         actions.setActiveNote({
           ...activeNoteRef.current,
           version: updated.version,
           updatedAt: updated.updatedAt,
           title: data.title,
+          content: data.content,
+          contentText: data.contentText,
         });
         actions.updateNoteInList({ id: updated.id, title: updated.title, contentText: updated.contentText, updatedAt: updated.updatedAt });
         actions.setSyncStatus("saved");
@@ -638,6 +744,21 @@ export default function EditorPane() {
             <MessageCircle size={14} className="text-blue-500" />
           </Button>
 
+          {/* 编辑器模式切换（MD / Tiptap） */}
+          <button
+            onClick={toggleEditorMode}
+            title={editorMode === "md" ? "当前 Markdown 编辑器，点击切换到富文本" : "当前富文本编辑器，点击切换到 Markdown"}
+            className={cn(
+              "flex items-center gap-1 h-7 px-1.5 rounded-md text-[10px] font-mono font-medium transition-colors border",
+              editorMode === "md"
+                ? "bg-accent-primary/10 text-accent-primary border-accent-primary/30 hover:bg-accent-primary/15"
+                : "bg-app-hover text-tx-tertiary border-app-border hover:text-tx-secondary hover:bg-app-active"
+            )}
+          >
+            <FileCode size={12} />
+            <span>{editorMode === "md" ? "MD" : "RTE"}</span>
+          </button>
+
           <div className="w-px h-4 bg-app-border" />
 
           {/* AI 工具组 */}
@@ -662,17 +783,30 @@ export default function EditorPane() {
         </div>
       </div>
 
-      {/* Tiptap Editor + Outline */}
+      {/* Editor (MD / Tiptap 按模式分派) + Outline */}
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 overflow-hidden">
-          <TiptapEditor
-            note={activeNote}
-            onUpdate={handleUpdate}
-            onTagsChange={handleTagsChange}
-            onHeadingsChange={setHeadings}
-            onEditorReady={(fn) => { scrollToRef.current = fn; }}
-            editable={!activeNote.isLocked}
-          />
+          {editorMode === "md" ? (
+            <MarkdownEditor
+              ref={editorHandleRef}
+              note={activeNote}
+              onUpdate={handleUpdate}
+              onTagsChange={handleTagsChange}
+              onHeadingsChange={setHeadings}
+              onEditorReady={(fn) => { scrollToRef.current = fn; }}
+              editable={!activeNote.isLocked}
+            />
+          ) : (
+            <TiptapEditor
+              ref={editorHandleRef}
+              note={activeNote}
+              onUpdate={handleUpdate}
+              onTagsChange={handleTagsChange}
+              onHeadingsChange={setHeadings}
+              onEditorReady={(fn) => { scrollToRef.current = fn; }}
+              editable={!activeNote.isLocked}
+            />
+          )}
         </div>
       {/* 分享弹窗 */}
       {showShareModal && (

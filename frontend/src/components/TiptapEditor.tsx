@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useEditor, EditorContent, Extension, ReactNodeViewRenderer } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { AnimatePresence, motion } from "framer-motion";import StarterKit from "@tiptap/starter-kit";
@@ -28,6 +28,7 @@ import { toast } from "@/lib/toast";
 import { Note, Tag } from "@/types";
 import TagInput from "@/components/TagInput";
 import AIWritingAssistant from "@/components/AIWritingAssistant";
+import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/components/editors/types";
 import { SlashCommandsMenu, getDefaultSlashCommands, createSlashExtension, createSlashEventHandlers } from "@/components/SlashCommands";
 import CodeBlockView from "@/components/CodeBlockView";
 import { useTranslation } from "react-i18next";
@@ -200,12 +201,11 @@ function createKeyboardExtension(flushSaveRef: React.MutableRefObject<() => void
   });
 }
 
-export interface HeadingItem {
-  id: string;
-  level: number;
-  text: string;
-  pos: number;
-}
+/**
+ * 大纲/跳转条目：直接复用共享的 NoteEditorHeading。
+ * 保留 `HeadingItem` 名字供历史 `import { HeadingItem } from "./TiptapEditor"` 的引用。
+ */
+export type HeadingItem = NoteEditorHeading;
 
 interface ToolbarButtonProps {
   onClick: () => void;
@@ -239,21 +239,11 @@ function ToolbarDivider() {
   return <div className="w-px h-5 bg-app-border mx-1" />;
 }
 
-interface TiptapEditorProps {
-  note: Note;
-  onUpdate: (data: { content: string; contentText: string; title: string }) => void;
-  onTagsChange?: (tags: Tag[]) => void;
-  onHeadingsChange?: (headings: HeadingItem[]) => void;
-  onEditorReady?: (scrollTo: (pos: number) => void) => void;
-  editable?: boolean;
-  /**
-   * 访客模式（分享页可编辑场景）：
-   * - 禁用 TagInput（依赖 useApp，分享页无 AppProvider，会崩）
-   * - 隐藏 AI 助手入口（访客无登录态，调 AI API 会 401）
-   * 默认 false（正常登录态使用）
-   */
-  isGuest?: boolean;
-}
+/**
+ * TiptapEditor props 契约：完全继承 NoteEditorProps，保证和 MarkdownEditor 100% 对齐。
+ * 若需要 Tiptap 独有的 prop，请在此处 extends 扩展，而非另起炉灶。
+ */
+type TiptapEditorProps = NoteEditorProps;
 
 function extractHeadings(editor: any): HeadingItem[] {
   const headings: HeadingItem[] = [];
@@ -272,7 +262,10 @@ function extractHeadings(editor: any): HeadingItem[] {
   return headings;
 }
 
-export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady, editable = true, isGuest = false }: TiptapEditorProps) {
+export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEditor(
+  { note, onUpdate, onTagsChange, onHeadingsChange, onEditorReady, editable = true, isGuest = false },
+  ref,
+) {
   const titleRef = useRef<HTMLInputElement>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
   const [wordStats, setWordStats] = useState({ chars: 0, charsNoSpace: 0, words: 0 });
@@ -318,6 +311,22 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
   // 保持最新的 onUpdate ref
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+
+  /**
+   * 本编辑器最近一次派发给 onUpdate 的 content 字符串。
+   *
+   * 作用：父级 EditorPane 保存成功后会把 `content` 回填到 `activeNote`，
+   * 这会让本组件的 `note.content` 引用变化并触发
+   * `useEffect([note.id, note.content])` 去 setContent —— 如果恰好 setContent
+   * 的就是"自己刚派出去的那份"，没有意义且可能打断正在继续输入的用户。
+   *
+   * 守卫策略：
+   *   - onUpdate 派出前把 JSON 记到这里
+   *   - 同步 effect 里先比对：note.content === lastEmittedContentRef.current 就跳过
+   *   - 其他来源（MD 编辑器保存、版本恢复、切换笔记）的变化不会等于这个值，
+   *     走正常 setContent 路径
+   */
+  const lastEmittedContentRef = useRef<string | null>(null);
 
   // 立即保存（Ctrl/Cmd+S 使用）：清掉 debounce 并立刻调用 onUpdate
   const flushSaveRef = useRef<() => void>(() => {});
@@ -575,6 +584,7 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
       debounceTimer.current = setTimeout(() => {
         const json = JSON.stringify(editor.getJSON());
         const title = titleRef.current?.value || noteRef.current.title;
+        lastEmittedContentRef.current = json;
         onUpdateRef.current({ content: json, contentText: text, title });
       }, 500);
     },
@@ -590,13 +600,39 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
     const json = JSON.stringify(editor.getJSON());
     const text = editor.getText();
     const title = titleRef.current?.value || noteRef.current.title;
+    lastEmittedContentRef.current = json;
     onUpdateRef.current({ content: json, contentText: text, title });
     try {
       toast.success(t('tiptap.saved') || 'Saved');
     } catch {}
   };
 
+  /**
+   * 对父组件暴露命令式 API：
+   *   - flushSave(): 切换编辑器 / 切换笔记时立即把 pending 的 debounce 更新写出去，
+   *                 防止丢字。这里**不弹 toast**（避免切换瞬间刷屏），
+   *                 与 Ctrl/Cmd+S 的交互保持分离。
+   */
+  useImperativeHandle(
+    ref,
+    () => ({
+      flushSave: () => {
+        if (!editor) return;
+        if (!debounceTimer.current) return;
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = null;
+        const json = JSON.stringify(editor.getJSON());
+        const text = editor.getText();
+        const title = titleRef.current?.value || noteRef.current.title;
+        lastEmittedContentRef.current = json;
+        onUpdateRef.current({ content: json, contentText: text, title });
+      },
+    }),
+    [editor],
+  );
+
   // 切换笔记时同步编辑器内容
+  const lastSyncedNoteIdRef = useRef<string | null>(null);
   useEffect(() => {
     // 切换笔记时立即清理旧的 debounce timer，防止旧笔记的保存请求泄漏
     if (debounceTimer.current) {
@@ -605,6 +641,28 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
     }
 
     if (editor && note) {
+      // 笔记切换时重置 lastEmitted 守卫（新笔记的 content 肯定要真正 setContent）
+      if (lastSyncedNoteIdRef.current !== note.id) {
+        lastEmittedContentRef.current = null;
+        lastSyncedNoteIdRef.current = note.id;
+      }
+
+      // 自写自读守卫：如果 note.content 正是自己上次派出去的那份 JSON 字符串，
+      // 说明这次 effect 是 EditorPane 保存完成后回填引起的 → 编辑器 DOM 已是
+      // 最新，不需要 setContent（否则会打断继续输入 / 产生光标抖动）。
+      if (
+        lastEmittedContentRef.current !== null &&
+        note.content === lastEmittedContentRef.current
+      ) {
+        // 仍然刷新字数/大纲，保证状态栏和大纲与实际内容同步
+        setWordStats(computeStats(editor.getText()));
+        onHeadingsChange?.(extractHeadings(editor));
+        if (titleRef.current && titleRef.current.value !== note.title) {
+          titleRef.current.value = note.title;
+        }
+        return;
+      }
+
       const parsed = parseContent(note.content);
       const currentJson = JSON.stringify(editor.getJSON());
       const newJson = JSON.stringify(parsed);
@@ -616,6 +674,10 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
         queueMicrotask(() => {
           isSettingContent.current = false;
         });
+        // 外部驱动的 setContent 之后，本编辑器当前持有的 content 不再等于
+        // 自己之前派出去的值（现在持有的是 parsed 后再重新 serialize 的版本），
+        // 把 lastEmitted 清掉，避免后续误判为"自写"。
+        lastEmittedContentRef.current = null;
       }
       setWordStats(computeStats(editor.getText()));
       onHeadingsChange?.(extractHeadings(editor));
@@ -625,22 +687,17 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
     }
   }, [note.id, note.content]);
   //   ^^^^^^^^^^^^^^^^^^^^^^
-  //   依赖为什么是 content 而不是 version：
+  //   依赖含 content 的完整语义（更新版）：
   //
-  //   父组件（EditorPane.handleUpdate）在保存成功后，为了避免打断用户输入，
-  //   只回填 version/updatedAt/title，**不回填 content**。因此：
+  //   父组件 EditorPane.handleUpdate 现在会把保存成功的 content 回填到 activeNote，
+  //   这样切换编辑器 (MD ↔ RTE) 时双方都能看到最新内容。但为避免 "自己刚派的
+  //   JSON 又被 setContent 回来" 打断输入，本 effect 内用 lastEmittedContentRef
+  //   做自写自读守卫。命中则 no-op，否则才执行真正的 setContent。
   //
-  //   1) 正常打字保存：note.version 会 +1 但 note.content 不变
-  //      → 若依赖 version，此 effect 会被触发，用 旧 note.content 去 setContent，
-  //        把用户刚输入的文本覆盖回退（这就是"输入任何文本都自动回退"的 bug）。
-  //      → 改用 content 依赖后，content 没变，effect 不跑，用户输入不被回退。
-  //
-  //   2) 恢复历史版本：VersionHistoryPanel.onRestore → setActiveNote(updated)，
-  //      updated.content 是新的（老版本内容） → content 变化 → effect 触发 → setContent。
-  //
-  //   3) 切换笔记：note.id 变化 → effect 触发。
-  //
-  //   内部仍保留 currentJson !== newJson 护栏，避免同一 JSON 重复 setContent 抖动光标。
+  //   触发时机：
+  //   1) 本编辑器打字保存：content 回填 == lastEmitted → 守卫命中 → 不重放。
+  //   2) 对侧编辑器保存后切回来：content 不等于 lastEmitted → 正常 setContent。
+  //   3) 版本恢复 / 切换笔记 / 外部修改：同上，走正常 setContent。
 
   // 组件卸载时清理 debounce timer
   useEffect(() => {
@@ -1316,7 +1373,7 @@ export default function TiptapEditor({ note, onUpdate, onTagsChange, onHeadingsC
       </AnimatePresence>
     </div>
   );
-}
+});
 
 /**
  * 检测粘贴的多行纯文本是否看起来像代码/命令，而非中文自然语言段落。
@@ -1406,22 +1463,64 @@ function looksLikeMarkdown(text: string): boolean {
 }
 
 /**
- * 解析笔记内容（JSON / HTML / 纯文本）为 Tiptap 可用的 doc 结构
+ * 解析笔记内容为 Tiptap 可用的 doc 结构
+ *
+ * 输入可能是：
+ *   1) Tiptap ProseMirror JSON 字符串（老笔记 / Tiptap 保存的）
+ *   2) HTML 字符串（极少，历史导入路径）
+ *   3) Markdown 字符串（MD 编辑器保存的 → 切回富文本时）
+ *   4) 纯文本 / 空
+ *
+ * 关键点：
+ *   - MD 分支必须先转 HTML 再交给 Tiptap，否则标题/列表/代码块等结构
+ *     全部塌缩成一段纯文本 → 用户切回富文本后修改/保存时实际丢失了结构。
+ *   - MD 识别与 contentFormat.detectFormat 保持一致：JSON 合法 + 含 Tiptap
+ *     文档特征才认 tiptap-json，否则一律按 MD 处理（原先兜底只保留纯文本，
+ *     是"切到富文本内容丢失"的直接原因）。
  */
 function parseContent(content: string): any {
   if (!content || content === "{}") {
     return { type: "doc", content: [{ type: "paragraph" }] };
   }
-  if (typeof content === "string") {
+  if (typeof content !== "string") return content;
+
+  const trimmed = content.trim();
+
+  // 1) Tiptap JSON：宽松尝试 parse，成功且长得像 doc 才接受
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
     try {
-      return JSON.parse(content);
-    } catch {
-      // HTML 内容直接返回字符串，Tiptap 可以解析 HTML
-      if (content.trim().startsWith("<")) {
-        return content;
+      const parsed = JSON.parse(trimmed);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        (parsed.type === "doc" ||
+          (typeof parsed.type === "string" && Array.isArray(parsed.content)))
+      ) {
+        return parsed;
       }
-      return { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: content }] }] };
+      // 是合法 JSON 但不是 Tiptap doc → 当 MD / 纯文本继续往下走
+    } catch {
+      /* 不是合法 JSON，继续下一分支 */
     }
   }
-  return content;
+
+  // 2) HTML 字符串：Tiptap 直接能吃
+  if (/^<\w/.test(trimmed)) {
+    return content;
+  }
+
+  // 3) Markdown / 纯文本 → 转 HTML 再交给 Tiptap
+  try {
+    const html = markdownToSimpleHtml(content);
+    if (html && html.trim()) return html;
+  } catch (err) {
+    console.warn("[TiptapEditor] markdownToSimpleHtml failed, fallback to text:", err);
+  }
+
+  // 兜底：纯文本段落
+  return {
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: content }] }],
+  };
 }
