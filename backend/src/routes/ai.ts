@@ -315,6 +315,70 @@ ai.post("/chat", async (c) => {
 });
 
 // ===== 知识库问答 RAG =====
+
+/**
+ * 从用户问题中提取检索关键词。
+ *
+ * 为什么要专门写：原实现只按空白/标点 split，对中文几乎不可用——中文句子
+ * 通常整句没空格，split 后得到整句一个 token，然后用这个长 token 去做
+ * FTS5 MATCH 或 LIKE %...% 基本永远命中不了任何笔记，导致"AI 无法根据笔记
+ * 本库读取笔记"。
+ *
+ * 新策略：
+ *   1. 拆分 CJK 字符块和 ASCII 词
+ *   2. CJK 块做 bigram（相邻两字滑窗）展开，比如"前端性能" → ["前端","端性","性能"]
+ *      —— 这是在 unicode61 默认 tokenizer 不支持中文分词前提下最通用的做法，
+ *      大多数 2 字词都能覆盖，FTS5 前缀通配符再做一次兜底。
+ *   3. 过滤停用词（语气词/疑问代词等对检索无贡献的词）
+ *   4. 去重、截断到合理数量
+ */
+const STOP_WORDS = new Set([
+  // 中文停用词（问答/口语）
+  "的", "了", "和", "是", "在", "有", "我", "你", "他", "她", "它", "我们", "你们",
+  "什么", "怎么", "如何", "为啥", "为什么", "哪个", "哪些", "哪里", "谁", "吗", "呢",
+  "吧", "啊", "呀", "哦", "嗯", "一下", "一些", "这个", "那个", "这些", "那些",
+  "请", "帮我", "给我", "告诉", "总结", "帮忙", "可以", "能", "要", "想", "知道",
+  // 英文停用词
+  "the", "a", "an", "is", "are", "was", "were", "do", "does", "did", "to", "of",
+  "in", "on", "at", "for", "and", "or", "but", "with", "by", "from", "as", "it",
+  "this", "that", "these", "those", "what", "how", "why", "where", "which", "who",
+  "can", "could", "should", "would", "will", "please", "tell", "me", "my", "i",
+]);
+
+function extractKeywords(question: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  const add = (w: string) => {
+    const lw = w.toLowerCase();
+    if (lw.length < 2) return;
+    if (STOP_WORDS.has(lw)) return;
+    if (seen.has(lw)) return;
+    seen.add(lw);
+    out.push(lw);
+  };
+
+  // 正则同时匹配 CJK 连续块 与 ASCII 单词/数字串
+  const re = /[\u4e00-\u9fff\u3400-\u4dbf]+|[a-zA-Z][a-zA-Z0-9_-]*|\d+/g;
+  const matches = question.match(re) || [];
+
+  for (const chunk of matches) {
+    if (/^[\u4e00-\u9fff\u3400-\u4dbf]+$/.test(chunk)) {
+      // 中文块：整块 + bigram 展开
+      if (chunk.length >= 2) add(chunk.length <= 4 ? chunk : chunk.slice(0, 4));
+      for (let i = 0; i + 2 <= chunk.length; i++) {
+        add(chunk.slice(i, i + 2));
+      }
+    } else {
+      // ASCII / 数字：直接加
+      add(chunk);
+    }
+  }
+
+  // 限制规模，避免 FTS 查询过长
+  return out.slice(0, 8);
+}
+
 ai.post("/ask", async (c) => {
   const settings = getAISettings();
   if (!settings.ai_api_url) {
@@ -337,19 +401,16 @@ ai.post("/ask", async (c) => {
   const db = getDb();
   const userId = c.req.header("X-User-Id") || "demo";
 
-  // 将问题分词为搜索关键词（简单拆分）
-  const keywords = question
-    .replace(/[?？!！。，,.\s]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(k => k.length > 1)
-    .slice(0, 5);
+  const keywords = extractKeywords(question);
 
   let relatedNotes: { id: string; title: string; snippet: string }[] = [];
 
   if (keywords.length > 0) {
-    // FTS5 OR 查询
-    const ftsQuery = keywords.map(k => `"${k.replace(/"/g, "")}"`).join(" OR ");
+    // FTS5 查询：每个关键词加前缀通配符 *，用 OR 连接，提高命中率
+    // 例如：「"前端"* OR "性能"* OR "优化"*」
+    const ftsQuery = keywords
+      .map(k => `"${k.replace(/"/g, "")}"*`)
+      .join(" OR ");
     try {
       const ftsResults = db.prepare(`
         SELECT rowid FROM notes_fts WHERE notes_fts MATCH ?
@@ -368,7 +429,7 @@ ai.post("/ask", async (c) => {
         relatedNotes = notes.map(n => ({
           id: n.id,
           title: n.title,
-          snippet: n.contentText.slice(0, 500),
+          snippet: (n.contentText || "").slice(0, 500),
         }));
       }
     } catch {
@@ -376,11 +437,17 @@ ai.post("/ask", async (c) => {
     }
   }
 
-  // 如果 FTS 没结果，尝试 LIKE 模糊匹配
+  // 如果 FTS 没结果，尝试 LIKE 模糊匹配（同时匹配 title 与 contentText，提高召回）
   if (relatedNotes.length === 0 && keywords.length > 0) {
     try {
-      const likeClauses = keywords.slice(0, 3).map(() => "contentText LIKE ?").join(" OR ");
-      const likeParams = keywords.slice(0, 3).map(k => `%${k}%`);
+      const topKeywords = keywords.slice(0, 5);
+      const likeClauses = topKeywords
+        .map(() => "(contentText LIKE ? OR title LIKE ?)")
+        .join(" OR ");
+      const likeParams: string[] = [];
+      for (const k of topKeywords) {
+        likeParams.push(`%${k}%`, `%${k}%`);
+      }
       const notes = db.prepare(`
         SELECT id, title, contentText FROM notes
         WHERE userId = ? AND isTrashed = 0 AND (${likeClauses})
@@ -391,10 +458,33 @@ ai.post("/ask", async (c) => {
       relatedNotes = notes.map(n => ({
         id: n.id,
         title: n.title,
-        snippet: n.contentText.slice(0, 500),
+        snippet: (n.contentText || "").slice(0, 500),
       }));
     } catch {
       // fallback failed
+    }
+  }
+
+  // 最终兜底：关键词完全没命中（比如用户问"总结我最近的笔记"这种不含具体
+  // 内容词的问题），或所有检索路径都失败时，取最近更新的若干篇笔记作为上下文。
+  // 没有这档兜底时，AI 只会回答"你的知识库中没有相关内容"——给人"AI 读不到
+  // 笔记"的错觉。
+  if (relatedNotes.length === 0) {
+    try {
+      const notes = db.prepare(`
+        SELECT id, title, contentText FROM notes
+        WHERE userId = ? AND isTrashed = 0
+        ORDER BY updatedAt DESC
+        LIMIT 5
+      `).all(userId) as { id: string; title: string; contentText: string }[];
+
+      relatedNotes = notes.map(n => ({
+        id: n.id,
+        title: n.title,
+        snippet: (n.contentText || "").slice(0, 500),
+      }));
+    } catch {
+      // nothing to do
     }
   }
 

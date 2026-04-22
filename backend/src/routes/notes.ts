@@ -171,17 +171,55 @@ app.put("/:id", async (c) => {
   }
 
   // Phase 3: 保存版本历史（仅在内容有实质变更时）
+  //
+  // 优化：连续编辑窗口内合并，避免每次 debounce 保存都写一条版本。
+  //
+  // 问题背景：前端编辑器 500ms debounce 后就会 PUT 一次，持续打字会产生大量
+  //   note_versions 记录（几十条/分钟），版本历史面板被刷屏、存储浪费。
+  //
+  // 合并策略：
+  //   - 每条 edit 版本存的是"这次编辑之前的笔记快照"（编辑起点）。
+  //   - 若同一笔记最近一条 edit 版本的 createdAt 距今 < VERSION_MERGE_WINDOW_MS，
+  //     说明仍在同一段连续编辑里，不需要再写一条（已经有了这段编辑的"起点"快照）。
+  //   - 超出窗口、或上一条不是 edit（例如 restore），则写入新版本。
+  //
+  // 语义收益：用户"恢复"时拿到的仍是"开始改之前那一刻的状态"，与原先每次都写
+  //   但只恢复到"上一步"相比，体验更合理（避免只能回滚 1 秒前）。
+  const VERSION_MERGE_WINDOW_MS = 5 * 60 * 1000; // 5 分钟
   if (body.content !== undefined || body.title !== undefined) {
     const currentNote = db.prepare("SELECT title, content, contentText, version, userId FROM notes WHERE id = ?").get(id) as any;
     if (currentNote) {
       const hasContentChange = (body.content !== undefined && body.content !== currentNote.content)
         || (body.title !== undefined && body.title !== currentNote.title);
       if (hasContentChange) {
-        const versionId = uuid();
-        db.prepare(`
-          INSERT INTO note_versions (id, noteId, userId, title, content, contentText, version, changeType)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'edit')
-        `).run(versionId, id, currentNote.userId, currentNote.title, currentNote.content, currentNote.contentText, currentNote.version);
+        // 查最近一条本笔记的 edit 版本，判断是否还在合并窗口内
+        const lastEdit = db.prepare(`
+          SELECT createdAt FROM note_versions
+          WHERE noteId = ? AND changeType = 'edit'
+          ORDER BY version DESC
+          LIMIT 1
+        `).get(id) as { createdAt: string } | undefined;
+
+        let shouldInsert = true;
+        if (lastEdit) {
+          // SQLite datetime('now') 存的是 UTC 字符串但不带 Z 后缀
+          const normalized = /Z$|[+-]\d{2}:?\d{2}$/.test(lastEdit.createdAt)
+            ? lastEdit.createdAt
+            : lastEdit.createdAt.replace(" ", "T") + "Z";
+          const lastTs = new Date(normalized).getTime();
+          if (!Number.isNaN(lastTs) && Date.now() - lastTs < VERSION_MERGE_WINDOW_MS) {
+            // 窗口内：复用已有的"编辑起点"快照，不再新建
+            shouldInsert = false;
+          }
+        }
+
+        if (shouldInsert) {
+          const versionId = uuid();
+          db.prepare(`
+            INSERT INTO note_versions (id, noteId, userId, title, content, contentText, version, changeType)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'edit')
+          `).run(versionId, id, currentNote.userId, currentNote.title, currentNote.content, currentNote.contentText, currentNote.version);
+        }
       }
     }
   }

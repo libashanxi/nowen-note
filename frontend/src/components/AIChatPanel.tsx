@@ -53,8 +53,8 @@ export default function AIChatPanel({ onClose, onNavigateToNote }: {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  const handleSend = useCallback(async () => {
-    const question = input.trim();
+  const handleSend = useCallback(async (override?: string) => {
+    const question = (override ?? input).trim();
     if (!question || isLoading) return;
 
     const userMsg: ChatMessage = {
@@ -211,11 +211,11 @@ export default function AIChatPanel({ onClose, onNavigateToNote }: {
   ];
 
   const handleSuggestedQuestion = (q: string) => {
-    setInput(q);
-    // 自动发送
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 50);
+    // 直接把问题发送出去（原实现仅 setInput，用户还需手动回车，
+    // 经常被误以为"AI 问答没反应"）。
+    if (isLoading) return;
+    setInput("");
+    handleSend(q);
   };
 
   return (
@@ -528,7 +528,7 @@ export default function AIChatPanel({ onClose, onNavigateToNote }: {
             }}
           />
           <button
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={!input.trim() || isLoading}
             className={cn(
               "shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all",
