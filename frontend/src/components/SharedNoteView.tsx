@@ -8,6 +8,7 @@ import { common, createLowlight } from "lowlight";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import TiptapEditor from "@/components/TiptapEditor";
+import type { NoteEditorUpdatePayload } from "@/components/editors/types";
 import { detectFormat } from "@/lib/contentFormat";
 
 // 分享页独立的 lowlight 实例（与编辑器保持一致的 common 语法集合）
@@ -265,7 +266,7 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
    * - TiptapEditor 内部已做 500ms debounce，这里直接调 API
    * - 发生 409 版本冲突时，自动拉取最新内容刷新（注意：这会丢弃本地未保存改动，所以先提示）
    */
-  const handleGuestSave = useCallback(async (data: { content: string; contentText: string; title: string }) => {
+  const handleGuestSave = useCallback(async (data: NoteEditorUpdatePayload) => {
     if (!content) return;
     if (!guestNameRef.current.trim()) {
       // 正常流程里不会走到这，但防御一下
@@ -279,8 +280,10 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
         shareToken,
         {
           title: data.title,
-          content: data.content,
-          contentText: data.contentText,
+          // NoteEditorUpdatePayload.content / contentText 在 CRDT 模式下可能缺省；
+          // updateSharedContent 目前签名要求 string，这里兜底为 ""（相当于无变更提交）。
+          content: data.content ?? "",
+          contentText: data.contentText ?? "",
           version: latestVersionRef.current ?? undefined,
           guestName: guestNameRef.current.trim(),
         },
@@ -330,6 +333,7 @@ export default function SharedNoteView({ shareToken }: SharedNoteViewProps) {
       id: content.noteId || shareToken,
       userId: "",
       notebookId: "",
+      workspaceId: null,
       title: content.title || "",
       content: content.content || "{}",
       contentText: content.contentText || "",

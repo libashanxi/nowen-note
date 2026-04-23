@@ -393,10 +393,24 @@ function AuthGate() {
     }
 
     const serverUrl = getServerUrl();
+    // 原生 APP（Capacitor）里没有 vite proxy，也没有同源后端 ——
+    // 如果拿不到 serverUrl，直接回登录页让用户重新输，避免打到 "/api"
+    // 后请求挂起导致白屏。
+    const isCap = !!(window as any).Capacitor?.isNativePlatform?.();
+    if (isCap && !serverUrl) {
+      setIsAuthenticated(false);
+      return;
+    }
     const baseUrl = serverUrl ? `${serverUrl}/api` : "/api";
+
+    // 8s 超时兜底：网络不通 / 服务器未启动时 fetch 会一直挂起，
+    // 没有超时的话 UI 会永远停在 loading（splash 已被手动隐藏 → 白屏）。
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
 
     fetch(`${baseUrl}/auth/verify`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
     })
       .then((res) => {
         if (res.ok) return res.json();
@@ -410,7 +424,8 @@ function AuthGate() {
         // L10: verify 失败 → 广播给其他 tab 一起下线
         broadcastLogout("verify_failed");
         setIsAuthenticated(false);
-      });
+      })
+      .finally(() => clearTimeout(timer));
   }, []);
 
   useEffect(() => {

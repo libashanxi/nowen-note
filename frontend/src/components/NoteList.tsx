@@ -547,9 +547,12 @@ const NoteCard = React.memo(React.forwardRef<HTMLDivElement, {
       onClick={onClick}
       onContextMenu={onContextMenu}
       draggable={draggable}
-      onDragStart={onDragStart}
+      // framer-motion 的 motion.div 把 onDragStart/onDragEnd 覆写成 (event, PanInfo) => void，
+      // 与 HTML 原生 DragEvent 签名冲突。我们在这里确实需要 HTML 的 DragEvent（下游会读
+      // dataTransfer），所以用 any 断言绕过类型检查，运行时 React 仍按 HTML 事件派发。
+      onDragStart={onDragStart as any}
       onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
+      onDragEnd={onDragEnd as any}
       onDrop={onDrop}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -781,6 +784,7 @@ export default function NoteList() {
         id: r.id,
         userId: "",
         notebookId: r.notebookId,
+        workspaceId: null,
         title: r.title,
         contentText: r.snippet,
         isPinned: r.isPinned,
@@ -924,6 +928,7 @@ export default function NoteList() {
         title: note.title,
         contentText: note.contentText || "",
         notebookId: note.notebookId,
+        workspaceId: note.workspaceId ?? null,
         isPinned: note.isPinned || 0,
         isFavorite: note.isFavorite || 0,
         isLocked: note.isLocked || 0,

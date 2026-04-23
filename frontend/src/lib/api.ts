@@ -23,8 +23,34 @@ export function clearCurrentWorkspace() {
   localStorage.removeItem(WORKSPACE_KEY);
 }
 
+/**
+ * 判定存储的 serverUrl 是否合法。
+ * 合法 = 能被 URL() 解析 + 协议是 http/https（或 capacitor 里常见的 capacitor:）。
+ * 历史上遇到过写入脏值（例如空串、只写了域名没协议、写成了前端自己的页面 URL）
+ * 的情况，导致 `${server}/api` 拼出 "localhost:5173/api" 这种跑到前端静态服务器
+ * 的路径，接口返回 index.html，前端再 JSON.parse 就炸 `<!DOCTYPE`。
+ */
+function isValidServerUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function getServerUrl(): string {
-  return localStorage.getItem(SERVER_URL_KEY) || "";
+  const raw = localStorage.getItem(SERVER_URL_KEY) || "";
+  if (!raw) return "";
+  if (!isValidServerUrl(raw)) {
+    // 自愈：清掉坏值，避免无限触发 `<!DOCTYPE` 报错
+    // eslint-disable-next-line no-console
+    console.warn("[api] invalid server url in localStorage, clearing:", raw);
+    try { localStorage.removeItem(SERVER_URL_KEY); } catch { /* ignore */ }
+    return "";
+  }
+  return raw;
 }
 
 export function setServerUrl(url: string) {
@@ -39,6 +65,38 @@ export function clearServerUrl() {
 function getBaseUrl(): string {
   const server = getServerUrl();
   return server ? `${server}/api` : "/api";
+}
+
+/**
+ * 安全解析响应体为 JSON。
+ *
+ * 直接 `res.json()` 在服务端返回 HTML（常见于：dev server SPA fallback、
+ * Capacitor WebView 内嵌静态服务、反代把 /api 也 fallback 到 index.html）
+ * 时会抛出非常不友好的 `Unexpected token '<'`，让人看不到是哪条请求出了问题。
+ *
+ * 这里统一读 text → 再判断 content-type / 体内容首字符，失败时抛出包含
+ * URL、status、content-type、body 前 200 字符的错，方便一眼定位环境问题。
+ */
+async function safeJson<T>(res: Response, fullUrl: string): Promise<T> {
+  const ct = res.headers.get("content-type") || "";
+  const text = await res.text();
+  // 优先按 content-type 判断；但部分后端会返回 text/plain 的 JSON，所以
+  // content-type 不像 json 时也尝试 parse，parse 失败再报错。
+  const looksJson = /json/i.test(ct) || /^\s*[[{]/.test(text);
+  if (!looksJson) {
+    const snippet = text.slice(0, 200).replace(/\s+/g, " ").trim();
+    throw new Error(
+      `Expected JSON from ${fullUrl} but got ${ct || "unknown"} (status=${res.status}). Body[0..200]: ${snippet}`,
+    );
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    const snippet = text.slice(0, 200).replace(/\s+/g, " ").trim();
+    throw new Error(
+      `Invalid JSON from ${fullUrl} (status=${res.status}, ct=${ct}). Body[0..200]: ${snippet}`,
+    );
+  }
 }
 
 function getToken(): string | null {
@@ -100,7 +158,8 @@ interface RequestOptions extends RequestInit {
 async function request<T>(url: string, options?: RequestOptions): Promise<T> {
   const token = getToken();
   const { sudoToken, ...restOptions } = options || {};
-  const res = await fetch(`${getBaseUrl()}${url}`, {
+  const fullUrl = `${getBaseUrl()}${url}`;
+  const res = await fetch(fullUrl, {
     ...restOptions,
     headers: {
       "Content-Type": "application/json",
@@ -154,7 +213,7 @@ async function request<T>(url: string, options?: RequestOptions): Promise<T> {
     }
     throw error;
   }
-  return res.json();
+  return safeJson<T>(res, fullUrl);
 }
 
 export const api = {

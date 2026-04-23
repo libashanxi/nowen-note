@@ -12,7 +12,12 @@
     "test:run": "vitest run",
     "cap:sync": "npx cap sync android",
     "cap:build": "npm run build && npx cap sync android",
-    "cap:open": "npx cap open android"
+    "cap:open": "npx cap open android",
+    "cap:release": "npm run cap:build && cd android && gradlew.bat assembleRelease",
+    "cap:release:unix": "npm run cap:build && cd android && ./gradlew assembleRelease",
+    "cap:install": "npm run cap:build && cd android && gradlew.bat installRelease",
+    "cap:install:unix": "npm run cap:build && cd android && ./gradlew installRelease",
+    "cap:clean": "cd android && gradlew.bat clean"
   },
   "dependencies": {
     "@capacitor/app": "^8.0.1",
