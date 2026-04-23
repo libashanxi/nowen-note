@@ -10,6 +10,22 @@ const MI_HEADERS = {
   Accept: "application/json, text/plain, */*",
 };
 
+// 小米笔记图片短格式匹配：
+// 形如 `123456.aBcDeF_-xyz<0/>` —— fileId 后紧跟 `<段落索引/>`。
+// fileId 字符集：字母、数字、小数点、下划线、减号。索引标签可能为 <0/>、<1/>、<n/> 等。
+// 这不是标准 HTML 图片标签，需要先识别并剥离/转换。
+const MI_SHORT_IMG_RE = /([A-Za-z0-9][A-Za-z0-9._-]{6,})<\d+\s*\/>/g;
+
+// 判断一行纯文本是否"只是"图片占位（短格式或 <img> 标签），用于标题提取时跳过
+function isImageOnlyLine(line: string): boolean {
+  const stripped = line
+    .replace(/<img\b[^>]*>/gi, "")
+    .replace(MI_SHORT_IMG_RE, "")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+  return stripped.length === 0;
+}
+
 // 从小米笔记条目中提取标题
 function extractTitle(entry: any): string {
   // 1. 尝试从 extraInfo.title 获取
@@ -21,18 +37,24 @@ function extractTitle(entry: any): string {
     if (extra?.title) return extra.title;
   } catch {}
 
-  // 2. 从内容第一行提取（去除自定义标签后取纯文本）
+  // 2. 从内容逐行提取（跳过纯图片行，去除自定义标签后取纯文本）
   const content = entry.content || entry.snippet || "";
   if (content) {
-    const firstLine = content.split("\n")[0] || "";
-    const plainText = firstLine
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .trim();
-    if (plainText) return plainText.substring(0, 50);
+    const lines = content.split("\n");
+    for (const rawLine of lines) {
+      if (!rawLine || !rawLine.trim()) continue;
+      if (isImageOnlyLine(rawLine)) continue;
+      const plainText = rawLine
+        .replace(/<img\b[^>]*>/gi, "")
+        .replace(MI_SHORT_IMG_RE, "")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .trim();
+      if (plainText) return plainText.substring(0, 50);
+    }
   }
 
   // 3. 使用 subject
@@ -419,6 +441,15 @@ async function convertMiNoteToHtmlAsync(content: string, cookie: string): Promis
 
   let html = content;
 
+  // 归一化小米笔记图片短格式：`{fileId}<段落索引/>` → `<img fileid="{fileId}" />`
+  // 只在图片短格式前后没有构成其他属性值（如 `="abc<0/>"`) 时替换。
+  // 这种短格式常见于"无标题、只有图片"的笔记，正文里直接裸写 fileId+位置标签。
+  html = html.replace(MI_SHORT_IMG_RE, (_m, fileId: string) => {
+    // 排除明显不是 fileId 的情况：纯数字很短、或包含空格
+    if (!/[A-Za-z]/.test(fileId) && fileId.length < 10) return _m;
+    return `<img fileid="${fileId}" />`;
+  });
+
   // 移除 fold 标签
   html = html.replace(/<\/?fold>/gi, "");
 
@@ -574,6 +605,8 @@ async function convertMiNoteToHtmlAsync(content: string, cookie: string): Promis
 function extractPlainText(content: string): string {
   if (!content) return "";
   return content
+    .replace(/<img\b[^>]*>/gi, "")
+    .replace(MI_SHORT_IMG_RE, "")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
