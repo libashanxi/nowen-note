@@ -303,7 +303,9 @@ export function CodeBlockView(props: NodeViewProps) {
       {/* 代码内容区 */}
       <pre className="code-block-pre">
         <NodeViewContent
-          as="code"
+          // NodeViewContent 的类型声明把 as 限制为 "div"，但 Tiptap 运行时实际支持任意 tag；
+          // 这里我们就是要 <code> 以便让 highlight.js / 复制按钮的语义正确。断言绕过类型窄化。
+          as={"code" as "div"}
           className={cn(
             "code-block-content hljs",
             currentLang && currentLang !== "auto" && `language-${currentLang}`,

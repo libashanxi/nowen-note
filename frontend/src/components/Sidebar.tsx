@@ -2,10 +2,10 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen, Plus, Star, Trash2, Search, ChevronRight,
-  ChevronDown, Hash, PanelLeftClose, PanelLeft, ListTodo,
+  ChevronDown, PanelLeftClose, PanelLeft, ListTodo,
   Settings, LogOut, FilePlus, FolderPlus, Edit2, X, BrainCircuit,
-  FileSpreadsheet, Bot, CalendarDays, Smile, Workflow, GripVertical,
-  FolderInput, Check, Folder, Home
+  Bot, CalendarDays, Smile, GripVertical,
+  FolderInput, Check, Home
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,10 +13,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import SettingsModal from "@/components/SettingsModal";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
 import TagColorPicker from "@/components/TagColorPicker";
+import WorkspaceSwitcher from "@/components/WorkspaceSwitcher";
 import { useContextMenu } from "@/hooks/useContextMenu";
 import { useApp, useAppActions } from "@/store/AppContext";
 import { useSiteSettings } from "@/hooks/useSiteSettings";
-import { api } from "@/lib/api";
+import { api, broadcastLogout } from "@/lib/api";
 import { Notebook, ViewMode } from "@/types";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
@@ -434,7 +435,7 @@ function NotebookItem({
         initial={{ opacity: 0, x: -8 }}
         animate={{ opacity: 1, x: 0 }}
         className={cn(
-          "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm group transition-colors",
+          "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm group transition-colors min-w-0",
           isSelected ? "bg-app-active text-tx-primary" : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
           // inside 放置指示：显著的内边框 + 背景高亮，让用户清楚"将作为子项放入"
           showInsideIndicator && "outline outline-2 outline-accent-primary bg-accent-primary/15"
@@ -443,10 +444,16 @@ function NotebookItem({
         onClick={() => onSelect(notebook.id)}
         onContextMenu={(e) => onContextMenu(e, notebook.id)}
         draggable={draggable && !isEditing}
-        onDragStart={(e) => { e.stopPropagation(); onDragStart?.(e, notebook.id); }}
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); onDragOver?.(e, notebook.id); }}
+        // framer-motion 的 motion.div 把 onDragStart/onDrag/onDragEnd 的类型
+        // 重载为手势系统签名（MouseEvent | PointerEvent | TouchEvent + PanInfo），
+        // 且没有暴露 React.DragEvent 的重载分支。但只有在 motion 组件显式设置
+        // drag prop 时才启用手势；我们没启用，运行时 motion 会把这些 handler
+        // 原样透传到底层 DOM 的 ondragstart/ondragover 等（HTML5 DnD）。
+        // 因此用 `as any` 绕过 TS 的手势签名约束，运行时行为与原生 DnD 一致。
+        onDragStart={((e: React.DragEvent) => { e.stopPropagation(); onDragStart?.(e, notebook.id); }) as any}
+        onDragOver={((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); onDragOver?.(e, notebook.id); }) as any}
         onDragEnd={() => onDragEnd?.()}
-        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop?.(e, notebook.id); }}
+        onDrop={(e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); onDrop?.(e, notebook.id); }}
       >
         {draggable && (
           <GripVertical size={12} className="text-tx-tertiary opacity-0 group-hover:opacity-60 transition-opacity shrink-0 cursor-grab active:cursor-grabbing" />
@@ -494,7 +501,7 @@ function NotebookItem({
           />
         ) : (
           <>
-            <span className="flex-1 truncate">{notebook.name}</span>
+            <span className="flex-1 min-w-0 truncate">{notebook.name}</span>
             {notebook.noteCount !== undefined && notebook.noteCount > 0 && (
               <span className="text-[10px] text-tx-tertiary tabular-nums shrink-0">{notebook.noteCount}</span>
             )}
@@ -569,6 +576,17 @@ export default function Sidebar() {
     }
   });
 
+  // 导航区（所有笔记 / 说说 / 待办 / 思维导图 / AI 问答 / 收藏 / 回收站）折叠状态
+  // 与笔记本、标签区的折叠策略保持一致：默认展开，切换后持久化到 localStorage
+  const [navExpanded, setNavExpanded] = useState(() => {
+    try {
+      const saved = localStorage.getItem("nowen-nav-expanded");
+      return saved === null ? true : saved === "true";
+    } catch {
+      return true;
+    }
+  });
+
   // 切换标签折叠状态时持久化到 localStorage
   const toggleTagsExpanded = useCallback(() => {
     setTagsExpanded((prev) => {
@@ -583,6 +601,15 @@ export default function Sidebar() {
     setNotebooksExpanded((prev) => {
       const next = !prev;
       try { localStorage.setItem("nowen-notebooks-expanded", String(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  // 切换导航区折叠状态时持久化到 localStorage
+  const toggleNavExpanded = useCallback(() => {
+    setNavExpanded((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("nowen-nav-expanded", String(next)); } catch {}
       return next;
     });
   }, []);
@@ -627,8 +654,23 @@ export default function Sidebar() {
   const tree = useMemo(() => buildTree(state.notebooks), [state.notebooks]);
 
   useEffect(() => {
-    api.getNotebooks().then(actions.setNotebooks).catch(console.error);
-    api.getTags().then(actions.setTags).catch(console.error);
+    const loadScopedData = () => {
+      api.getNotebooks().then(actions.setNotebooks).catch(console.error);
+      api.getTags().then(actions.setTags).catch(console.error);
+    };
+    loadScopedData();
+
+    // Phase 1: 工作区切换时重载数据
+    const onWorkspaceChange = () => {
+      // 清空选中状态避免跨空间残留
+      actions.setSelectedNotebook(null);
+      actions.setViewMode("all");
+      loadScopedData();
+      // 触发 NoteList 重新拉取
+      actions.refreshNotes();
+    };
+    window.addEventListener("nowen:workspace-changed", onWorkspaceChange);
+    return () => window.removeEventListener("nowen:workspace-changed", onWorkspaceChange);
   }, []);
 
   // 更换笔记本图标
@@ -1003,7 +1045,6 @@ export default function Sidebar() {
     { icon: <ListTodo size={16} />, label: t('sidebar.tasks'), mode: "tasks", active: state.viewMode === "tasks" },
     { icon: <BrainCircuit size={16} />, label: t('sidebar.mindMaps'), mode: "mindmaps", active: state.viewMode === "mindmaps" },
     { icon: <Bot size={16} />, label: t('sidebar.aiChat'), mode: "ai-chat", active: state.viewMode === "ai-chat" },
-    { icon: <Workflow size={16} />, label: t('sidebar.codex'), mode: "codex", active: state.viewMode === "codex" },
 
     { icon: <Star size={16} />, label: t('sidebar.favorites'), mode: "favorites", active: state.viewMode === "favorites" },
     { icon: <Trash2 size={16} />, label: t('sidebar.trash'), mode: "trash", active: state.viewMode === "trash" },
@@ -1037,6 +1078,11 @@ export default function Sidebar() {
         </div>
       </div>
 
+      {/* Workspace Switcher (Phase 1 多用户协作) */}
+      <div className="px-3 pt-2">
+        <WorkspaceSwitcher />
+      </div>
+
       {/* Search */}
       <div className="px-3 py-2">
         <div className="relative">
@@ -1060,52 +1106,80 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <div className="px-3 py-1 space-y-0.5">
-        {navItems.map((item) => {
-          const isTrashItem = item.mode === "trash";
-          return (
-            <div key={item.mode} className="relative group">
-              <button
-                onClick={() => {
-                  actions.setViewMode(item.mode);
-                  actions.setSelectedNotebook(null);
-                  actions.setMobileSidebar(false);
-                }}
-                onContextMenu={
-                  isTrashItem
-                    ? (e) => {
-                        e.preventDefault();
-                        openEmptyTrashConfirm();
-                      }
-                    : undefined
-                }
-                className={cn(
-                  "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-sm transition-colors",
-                  item.active
-                    ? "bg-app-active text-tx-primary"
-                    : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
-                  isTrashItem && "pr-8"
-                )}
-              >
-                {item.icon}
-                {item.label}
-              </button>
-              {isTrashItem && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEmptyTrashConfirm();
-                  }}
-                  title={t('sidebar.emptyTrash')}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-tx-tertiary hover:text-red-500 transition-all"
-                >
-                  <Trash2 size={13} />
-                </button>
-              )}
-            </div>
-          );
-        })}
+      <div className="px-3 flex items-center justify-between mb-1 mt-1">
+        <button
+          onClick={() => toggleNavExpanded()}
+          className="flex items-center gap-1 hover:text-tx-secondary transition-colors"
+          title={t('sidebar.navigation')}
+        >
+          <ChevronDown
+            size={12}
+            className={cn(
+              "text-tx-tertiary transition-transform duration-200",
+              !navExpanded && "-rotate-90"
+            )}
+          />
+          <span className="text-xs font-medium text-tx-tertiary uppercase tracking-wider">{t('sidebar.navigation')}</span>
+        </button>
       </div>
+
+      <AnimatePresence initial={false}>
+        {navExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0, overflow: "hidden" }}
+            animate={{ height: "auto", opacity: 1, overflow: "visible", transitionEnd: { overflow: "visible" } }}
+            exit={{ height: 0, opacity: 0, overflow: "hidden" }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="px-3 py-1 space-y-0.5">
+              {navItems.map((item) => {
+                const isTrashItem = item.mode === "trash";
+                return (
+                  <div key={item.mode} className="relative group">
+                    <button
+                      onClick={() => {
+                        actions.setViewMode(item.mode);
+                        actions.setSelectedNotebook(null);
+                        actions.setMobileSidebar(false);
+                      }}
+                      onContextMenu={
+                        isTrashItem
+                          ? (e) => {
+                              e.preventDefault();
+                              openEmptyTrashConfirm();
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        "flex items-center gap-2.5 w-full px-2 py-1.5 rounded-md text-sm transition-colors",
+                        item.active
+                          ? "bg-app-active text-tx-primary"
+                          : "text-tx-secondary hover:bg-app-hover hover:text-tx-primary",
+                        isTrashItem && "pr-8"
+                      )}
+                    >
+                      {item.icon}
+                      {item.label}
+                    </button>
+                    {isTrashItem && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEmptyTrashConfirm();
+                        }}
+                        title={t('sidebar.emptyTrash')}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-tx-tertiary hover:text-red-500 transition-all"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Separator */}
       <div className="mx-3 my-2 border-t border-app-border" />
@@ -1279,7 +1353,8 @@ export default function Sidebar() {
         </button>
         <button
           onClick={() => {
-            localStorage.removeItem("nowen-token");
+            // L10: 广播给其他 tab 一起下线
+            broadcastLogout("user_logout");
             window.location.reload();
           }}
           title={t('sidebar.logout')}

@@ -547,9 +547,12 @@ const NoteCard = React.memo(React.forwardRef<HTMLDivElement, {
       onClick={onClick}
       onContextMenu={onContextMenu}
       draggable={draggable}
-      onDragStart={onDragStart}
+      // framer-motion 的 motion.div 把 onDragStart/onDragEnd 覆写成 (event, PanInfo) => void，
+      // 与 HTML 原生 DragEvent 签名冲突。我们在这里确实需要 HTML 的 DragEvent（下游会读
+      // dataTransfer），所以用 any 断言绕过类型检查，运行时 React 仍按 HTML 事件派发。
+      onDragStart={onDragStart as any}
       onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
+      onDragEnd={onDragEnd as any}
       onDrop={onDrop}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -580,14 +583,14 @@ const NoteCard = React.memo(React.forwardRef<HTMLDivElement, {
           : "bg-transparent group-hover:bg-app-border"
       )} />
 
-      <div className="pl-3.5 pr-3 py-2.5">
+      <div className="pl-3.5 pr-3 py-2.5 min-w-0">
         {/* 标题行 + 状态图标 */}
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center justify-between gap-2 min-w-0">
           {draggable && (
             <GripVertical size={14} className="text-tx-tertiary opacity-0 group-hover:opacity-60 transition-opacity shrink-0 cursor-grab active:cursor-grabbing" />
           )}
           <h3 className={cn(
-            "text-sm font-medium truncate flex-1",
+            "text-sm font-medium truncate flex-1 min-w-0",
             isActive ? "text-tx-primary" : "text-tx-secondary group-hover:text-tx-primary"
           )}>
             {note.title || t('common.untitledNote')}
@@ -602,7 +605,7 @@ const NoteCard = React.memo(React.forwardRef<HTMLDivElement, {
 
         {/* 内容预览 */}
         {preview && (
-          <p className="text-xs text-tx-tertiary mt-1.5 line-clamp-2 leading-relaxed">{preview}</p>
+          <p className="text-xs text-tx-tertiary mt-1.5 line-clamp-2 leading-relaxed break-all">{preview}</p>
         )}
 
         {/* 底部元信息行 */}
@@ -781,6 +784,7 @@ export default function NoteList() {
         id: r.id,
         userId: "",
         notebookId: r.notebookId,
+        workspaceId: null,
         title: r.title,
         contentText: r.snippet,
         isPinned: r.isPinned,
@@ -924,6 +928,7 @@ export default function NoteList() {
         title: note.title,
         contentText: note.contentText || "",
         notebookId: note.notebookId,
+        workspaceId: note.workspaceId ?? null,
         isPinned: note.isPinned || 0,
         isFavorite: note.isFavorite || 0,
         isLocked: note.isLocked || 0,

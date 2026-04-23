@@ -4,6 +4,7 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import { AnimatePresence, motion } from "framer-motion";import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
+import ResizableImageView from "./ResizableImageView";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Underline from "@tiptap/extension-underline";
 import Highlight from "@tiptap/extension-highlight";
@@ -15,6 +16,8 @@ import { common, createLowlight } from "lowlight";
 import { DOMParser as ProseMirrorDOMParser, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import { markdownToSimpleHtml } from "@/lib/importService";
+import { markdownToHtml as mdToFullHtml, detectFormat as detectContentFormat } from "@/lib/contentFormat";
+import { api } from "@/lib/api";
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   List, ListOrdered, Heading1, Heading2, Heading3,
@@ -355,7 +358,46 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         placeholder: t('tiptap.placeholder'),
         emptyEditorClass: "is-editor-empty",
       }),
-      Image.configure({
+      // Image 扩展：在原扩展基础上 (1) 新增 width/height 可持久化属性；
+      //             (2) 挂 ResizableImageView，提供选中后四角拖拽改宽度的能力。
+      // 序列化 DOM 仍是一个普通 <img>，width/height 作为 HTML 属性，
+      // 因此所有导出路径（zip/markdown/分享页/SSR）都无需改动。
+      Image.extend({
+        addAttributes() {
+          return {
+            ...this.parent?.(),
+            width: {
+              default: null,
+              parseHTML: (element) => {
+                const raw = element.getAttribute("width");
+                if (!raw) return null;
+                const n = parseInt(raw, 10);
+                return Number.isFinite(n) && n > 0 ? n : null;
+              },
+              renderHTML: (attrs) => {
+                if (attrs.width == null) return {};
+                return { width: attrs.width };
+              },
+            },
+            height: {
+              default: null,
+              parseHTML: (element) => {
+                const raw = element.getAttribute("height");
+                if (!raw) return null;
+                const n = parseInt(raw, 10);
+                return Number.isFinite(n) && n > 0 ? n : null;
+              },
+              renderHTML: (attrs) => {
+                if (attrs.height == null) return {};
+                return { height: attrs.height };
+              },
+            },
+          };
+        },
+        addNodeView() {
+          return ReactNodeViewRenderer(ResizableImageView);
+        },
+      }).configure({
         inline: false,
         allowBase64: true,
         HTMLAttributes: { class: "rounded-lg max-w-full mx-auto my-4 shadow-md" },
@@ -445,25 +487,51 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         event.preventDefault();
         try {
           // 1) 处理剪贴板中的图片文件（如截图粘贴）
+          //    走 /api/attachments 上传接口：写磁盘 + 落 attachments 行，
+          //    编辑器插入的 <img> 引用服务端 URL，避免内联 base64 把文档体积撑大。
           const items = event.clipboardData?.items;
           if (items) {
             for (let i = 0; i < items.length; i++) {
               if (items[i].type.startsWith("image/")) {
                 const file = items[i].getAsFile();
                 if (file) {
-                  const reader = new FileReader();
-                  reader.onload = (e) => {
-                    const src = e.target?.result as string;
-                    if (src) {
-                      const { state: editorState, dispatch } = view;
-                      const node = editorState.schema.nodes.image?.create({ src });
-                      if (node) {
-                        const tr = editorState.tr.replaceSelectionWith(node);
-                        dispatch(tr);
-                      }
+                  const currentNote = noteRef.current;
+                  const insertAtSrc = (src: string) => {
+                    const { state: editorState, dispatch } = view;
+                    const node = editorState.schema.nodes.image?.create({ src });
+                    if (node) {
+                      const tr = editorState.tr.replaceSelectionWith(node);
+                      dispatch(tr);
                     }
                   };
-                  reader.readAsDataURL(file);
+                  if (currentNote?.id) {
+                    showPasteToast("converting", t("tiptap.imageUploading"));
+                    api.attachments
+                      .upload(currentNote.id, file)
+                      .then(({ url }) => {
+                        insertAtSrc(url);
+                        showPasteToast("success", t("tiptap.imageUploadSuccess"));
+                      })
+                      .catch((err) => {
+                        console.error("Attachment upload failed, falling back to base64:", err);
+                        showPasteToast("error", t("tiptap.imageUploadFailed"));
+                        // 上传失败兜底：仍用 base64 插入，保证用户不丢失截图
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                          const src = e.target?.result as string;
+                          if (src) insertAtSrc(src);
+                        };
+                        reader.readAsDataURL(file);
+                      });
+                  } else {
+                    // 没有 note 上下文（理论上不应发生）：退回 base64
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                      const src = e.target?.result as string;
+                      if (src) insertAtSrc(src);
+                    };
+                    reader.readAsDataURL(file);
+                  }
                 }
                 return true;
               }
@@ -612,6 +680,12 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
    *   - flushSave(): 切换编辑器 / 切换笔记时立即把 pending 的 debounce 更新写出去，
    *                 防止丢字。这里**不弹 toast**（避免切换瞬间刷屏），
    *                 与 Ctrl/Cmd+S 的交互保持分离。
+   *   - getSnapshot(): 同步读取编辑器当前内容。flushSave 只能触发**异步** PUT，
+   *                 切换 RTE→MD 时若只靠 flushSave，MD 一 mount 读到的还是
+   *                 切换前的旧 note.content（PUT 没回包），在几百毫秒内会闪烁
+   *                 旧内容甚至丢失用户最近的输入。父组件可以调 getSnapshot()
+   *                 拿到最新 JSON+纯文本，立即回填 activeNote 后再 setEditorMode，
+   *                 MD 侧的 normalizeToMarkdown 就能直接基于最新内容初始化。
    */
   useImperativeHandle(
     ref,
@@ -627,6 +701,21 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         lastEmittedContentRef.current = json;
         onUpdateRef.current({ content: json, contentText: text, title });
       },
+      discardPending: () => {
+        // 切换编辑器时调用方已经自己 PUT 规范化内容，清掉 debounce 避免竞态
+        if (debounceTimer.current) {
+          clearTimeout(debounceTimer.current);
+          debounceTimer.current = null;
+        }
+      },
+      getSnapshot: () => {
+        if (!editor) return null;
+        return {
+          content: JSON.stringify(editor.getJSON()),
+          contentText: editor.getText(),
+        };
+      },
+      isReady: () => !!editor && !editor.isDestroyed,
     }),
     [editor],
   );
@@ -798,15 +887,41 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const src = e.target?.result as string;
+      const currentNote = noteRef.current;
+      const insertAtSrc = (src: string) => {
         editor.chain().focus().setImage({ src }).run();
       };
-      reader.readAsDataURL(file);
+      if (currentNote?.id) {
+        // 走 /api/attachments：写磁盘 + 记录 attachments 表，编辑器只引用 URL
+        toast.info(t("tiptap.imageUploading") || "Uploading image...");
+        api.attachments
+          .upload(currentNote.id, file)
+          .then(({ url }) => {
+            insertAtSrc(url);
+            toast.success(t("tiptap.imageUploadSuccess") || "Image uploaded");
+          })
+          .catch((err) => {
+            console.error("Attachment upload failed, falling back to base64:", err);
+            toast.error(t("tiptap.imageUploadFailed") || "Image upload failed");
+            // 兜底：失败时退回 base64，保证用户仍可插图
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const src = e.target?.result as string;
+              if (src) insertAtSrc(src);
+            };
+            reader.readAsDataURL(file);
+          });
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const src = e.target?.result as string;
+          if (src) insertAtSrc(src);
+        };
+        reader.readAsDataURL(file);
+      }
     };
     input.click();
-  }, [editor]);
+  }, [editor, t]);
 
   /**
    * 严格作用于当前选区的代码块切换：
@@ -1198,6 +1313,13 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       {/* Bubble menu for inline formatting */}
       {editor && (
         <BubbleMenu editor={editor}
+          // 仅在"非空文本选区且不是图片选区"时显示文本格式 BubbleMenu，
+          // 避免与下方的图片 BubbleMenu 叠加。
+          shouldShow={({ editor: ed, from, to }) => {
+            if (from === to) return false;
+            if (ed.isActive("image")) return false;
+            return true;
+          }}
           className="flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
         >
           <ToolbarButton
@@ -1250,6 +1372,66 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
               </ToolbarButton>
             </>
           )}
+        </BubbleMenu>
+      )}
+
+      {/* Bubble menu for image quick-size */}
+      {editor && (
+        <BubbleMenu
+          editor={editor}
+          // 仅在当前选中的是图片节点时显示。
+          shouldShow={({ editor: ed }) => ed.isActive("image")}
+          className="flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
+        >
+          {/*
+            25% / 50% / 75% / 100% 按"编辑区可视宽度的百分比"计算绝对 px，
+            写进 image 节点的 width 属性（和拖拽手柄写入同一个 attribute，
+            序列化路径完全一致）。
+
+            为什么用编辑区宽度而不是图片原始像素：
+              - 原始像素可能远大于视口（屏幕截图常见 2x/3x DPR），按原始
+                百分比会出现"50% 还是超宽"的反直觉结果；
+              - 编辑区宽度 = 用户实际看到的版心，百分比语义直观；
+              - 最终还是被 <img> 的 max-width:100% 兜底，不会溢出。
+           */}
+          {[
+            { key: "25", label: t("tiptap.imageSize25"), ratio: 0.25 },
+            { key: "50", label: t("tiptap.imageSize50"), ratio: 0.5 },
+            { key: "75", label: t("tiptap.imageSize75"), ratio: 0.75 },
+            { key: "100", label: t("tiptap.imageSize100"), ratio: 1 },
+          ].map((s) => (
+            <ToolbarButton
+              key={s.key}
+              title={s.label}
+              onClick={() => {
+                // 定位编辑器根 DOM 的可用宽度；拿不到就退回 640（常规版心宽）。
+                const root = editor.view.dom as HTMLElement;
+                const contentWidth = root.clientWidth || 640;
+                const target = Math.round(contentWidth * s.ratio);
+                editor
+                  .chain()
+                  .focus()
+                  .updateAttributes("image", { width: target })
+                  .run();
+              }}
+            >
+              <span className="text-xs px-1">{s.label}</span>
+            </ToolbarButton>
+          ))}
+          <div className="w-px h-4 bg-app-border mx-0.5" />
+          <ToolbarButton
+            title={t("tiptap.imageSizeOriginalTitle")}
+            onClick={() => {
+              // 移除自定义 width/height，回到图片自然尺寸（受 max-width:100% 约束）。
+              editor
+                .chain()
+                .focus()
+                .updateAttributes("image", { width: null, height: null })
+                .run();
+            }}
+          >
+            <span className="text-xs px-1">{t("tiptap.imageSizeOriginal")}</span>
+          </ToolbarButton>
         </BubbleMenu>
       )}
 
@@ -1474,6 +1656,10 @@ function looksLikeMarkdown(text: string): boolean {
  * 关键点：
  *   - MD 分支必须先转 HTML 再交给 Tiptap，否则标题/列表/代码块等结构
  *     全部塌缩成一段纯文本 → 用户切回富文本后修改/保存时实际丢失了结构。
+ *   - MD → HTML 优先用 `contentFormat.markdownToHtml`（基于 @lezer/markdown + GFM），
+ *     覆盖表格、任务列表、删除线、setext 标题、嵌套列表、块级 HTML 等；
+ *     失败时才降级到 `markdownToSimpleHtml`（逐行扫描，功能更弱但更宽松）。
+ *     此前一律走 simpleHtml → GFM 表格 / 删除线等切到 RTE 后会丢失结构。
  *   - MD 识别与 contentFormat.detectFormat 保持一致：JSON 合法 + 含 Tiptap
  *     文档特征才认 tiptap-json，否则一律按 MD 处理（原先兜底只保留纯文本，
  *     是"切到富文本内容丢失"的直接原因）。
@@ -1511,6 +1697,28 @@ function parseContent(content: string): any {
   }
 
   // 3) Markdown / 纯文本 → 转 HTML 再交给 Tiptap
+  //
+  //   首选 contentFormat.markdownToHtml：与 MarkdownEditor 同源的 @lezer/markdown + GFM
+  //   解析器，覆盖标题 / 列表 / 任务列表 / 表格 / 引用 / 代码块 / 水平线 / 链接 / 图片 /
+  //   删除线 / 内嵌 HTML 等全部语法，且格式识别与 detectFormat 保持一致。
+  //
+  //   降级到 importService.markdownToSimpleHtml：只覆盖少数基本语法，且对复杂嵌套
+  //   结构容易塌缩。当 mdToFullHtml 抛错（理论上不会）或返回空时才走它。
+  try {
+    // detectFormat 能把 "{ foo" 这种以 { 开头但不是 JSON 的内容识别为 md；
+    // empty/html 也会在这里被分类。html 已经在上面处理过，empty 就直接返回空 doc。
+    const fmt = detectContentFormat(content);
+    if (fmt === "empty") {
+      return { type: "doc", content: [{ type: "paragraph" }] };
+    }
+    // md / html 两种都尝试用完整 parser（html 走 markdownToHtml 时会被当作块级 HTML
+    // 原样传递，兼容）。Tiptap 随后会 parseHTML。
+    const html = mdToFullHtml(content);
+    if (html && html.trim()) return html;
+  } catch (err) {
+    console.warn("[TiptapEditor] markdownToHtml(full) failed, falling back to simpleHtml:", err);
+  }
+
   try {
     const html = markdownToSimpleHtml(content);
     if (html && html.trim()) return html;
