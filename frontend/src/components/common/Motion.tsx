@@ -28,7 +28,7 @@ import useReducedMotion from "../../hooks/useReducedMotion";
 type MotionHTMLTag = keyof typeof motion;
 
 function createMotionComponent<T extends MotionHTMLTag>(tag: T) {
-  const MotionTag = (motion as Record<string, React.ComponentType<HTMLMotionProps<"div">>>)[tag as string];
+  const MotionTag = (motion as unknown as Record<string, React.ComponentType<HTMLMotionProps<"div">>>)[tag as string];
   if (!MotionTag) {
     // Fallback：framer-motion 没注册的标签直接回落成原生标签
     return forwardRef<HTMLElement, HTMLMotionProps<"div">>((props, ref) =>
