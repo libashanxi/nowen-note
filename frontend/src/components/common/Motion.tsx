@@ -24,17 +24,18 @@ import React, { forwardRef } from "react";
 import { motion, type HTMLMotionProps } from "framer-motion";
 import useReducedMotion from "../../hooks/useReducedMotion";
 
-type ElementTag = keyof JSX.IntrinsicElements;
+/* 只取 framer-motion 支持的 HTML 标签子集 */
+type MotionHTMLTag = keyof typeof motion;
 
-function createMotionComponent<T extends ElementTag>(tag: T) {
-  const MotionTag = (motion as unknown as Record<string, React.ComponentType<HTMLMotionProps<T>>>)[tag as string];
+function createMotionComponent<T extends MotionHTMLTag>(tag: T) {
+  const MotionTag = (motion as Record<string, React.ComponentType<HTMLMotionProps<"div">>>)[tag as string];
   if (!MotionTag) {
     // Fallback：framer-motion 没注册的标签直接回落成原生标签
-    return forwardRef<HTMLElement, HTMLMotionProps<T>>((props, ref) =>
+    return forwardRef<HTMLElement, HTMLMotionProps<"div">>((props, ref) =>
       React.createElement(tag, { ...(props as unknown as object), ref })
     );
   }
-  const Comp = forwardRef<HTMLElement, HTMLMotionProps<T>>((props, ref) => {
+  const Comp = forwardRef<HTMLElement, HTMLMotionProps<"div">>((props, ref) => {
     const reduce = useReducedMotion();
     if (!reduce) {
       return React.createElement(MotionTag, { ...(props as object), ref } as never);
@@ -52,7 +53,7 @@ function createMotionComponent<T extends ElementTag>(tag: T) {
       layout: _l,
       layoutId: _lid,
       ...rest
-    } = props as HTMLMotionProps<T> & Record<string, unknown>;
+    } = props as HTMLMotionProps<"div"> & Record<string, unknown>;
     // reduce 模式下挂载静态 DOM，彻底跳过动画路径
     return React.createElement(MotionTag, {
       ...(rest as object),

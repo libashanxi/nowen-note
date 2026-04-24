@@ -66,7 +66,7 @@ const PURIFY_CONFIG: DOMPurify.Config = {
 
 /** 清洗 HTML：移除 XSS 向量，保留排版 */
 function sanitize(html: string): string {
-  return DOMPurify.sanitize(html, PURIFY_CONFIG);
+  return DOMPurify.sanitize(html, PURIFY_CONFIG as Record<string, unknown>);
 }
 
 /** 检测是否为完整 HTML 文档（包含 DOCTYPE 或 <html> 标签）
@@ -158,7 +158,7 @@ const HtmlPreviewPane = forwardRef<NoteEditorHandle, NoteEditorProps>(
           /* 只读预览——无待存数据 */
         },
         discardPending: () => {},
-        getSnapshot: () => note.content,
+        getSnapshot: () => ({ content: note.content, contentText: note.content.replace(/<[^>]*>/g, "") }),
         isReady: () => true,
       }),
       [note.content],
@@ -174,6 +174,7 @@ const HtmlPreviewPane = forwardRef<NoteEditorHandle, NoteEditorProps>(
         const doc = parser.parseFromString(note.content, "text/html");
         const hNodes = doc.querySelectorAll("h1, h2, h3");
         const items = Array.from(hNodes).map((node, idx) => ({
+          id: `html-h-${idx}`,
           level: parseInt(node.tagName[1], 10) as 1 | 2 | 3,
           text: (node as HTMLElement).textContent?.trim() || "",
           pos: idx,
@@ -186,6 +187,7 @@ const HtmlPreviewPane = forwardRef<NoteEditorHandle, NoteEditorProps>(
       const el = containerRef.current;
       const hNodes = el.querySelectorAll("h1, h2, h3");
       const items = Array.from(hNodes).map((node, idx) => ({
+        id: `html-h-${idx}`,
         level: parseInt(node.tagName[1], 10) as 1 | 2 | 3,
         text: (node as HTMLElement).textContent?.trim() || "",
         pos: idx,

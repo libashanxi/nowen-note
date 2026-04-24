@@ -42,11 +42,9 @@ export function useReducedMotion(): boolean {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     }
-    // @ts-expect-error legacy API
-    mq.addListener(handler);
+    (mq as unknown as { addListener: (cb: (e: MediaQueryListEvent) => void) => void }).addListener(handler);
     return () => {
-      // @ts-expect-error legacy API
-      mq.removeListener(handler);
+      (mq as unknown as { removeListener: (cb: (e: MediaQueryListEvent) => void) => void }).removeListener(handler);
     };
   }, []);
 

@@ -37,6 +37,22 @@ export interface FormatMenuPayload {
   level?: number;
 }
 
+/**
+ * 编辑器"格式状态"快照（renderer → main，同步系统菜单栏 checked 标记）。
+ * null 表示"无可用编辑器"（切到 MD 模式 / 失焦 / 销毁），主进程应清空 checked。
+ */
+export interface FormatStateSnapshot {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  code?: boolean;
+  heading1?: boolean;
+  heading2?: boolean;
+  heading3?: boolean;
+  paragraph?: boolean;
+}
+
 export type UpdaterStatus =
   | "checking"
   | "available"
@@ -78,6 +94,8 @@ interface NowenDesktopAPI {
   quitAndInstall: () => Promise<{ ok: boolean }>;
   getAppInfo: () => Promise<AppInfo>;
   openLogDir: () => Promise<{ ok: boolean; path: string }>;
+  /** 上报格式状态（同步菜单 checked）。preload 中已白名单化，仅 send，无 ack。 */
+  sendFormatState?: (state: FormatStateSnapshot | null) => void;
   isDesktop: true;
   platform: string;
 }
@@ -149,4 +167,19 @@ export async function openLogDir(): Promise<void> {
   const bridge = getBridge();
   if (!bridge) return;
   await bridge.openLogDir();
+}
+
+/**
+ * 上报当前编辑器的格式状态，供主进程同步系统菜单栏 checked 标记。
+ *
+ * 使用约束（调用方职责，不在此函数内做）：
+ *   - 节流（建议 100ms）；
+ *   - 浅比较去重（只在状态真正变化时调用）。
+ *   这两项在 TiptapEditor 的 effect 内实现，此处保持"薄封装"。
+ *
+ * 非 Electron 环境 / 旧版本 preload（没注入 sendFormatState）自动 no-op。
+ */
+export function sendFormatState(state: FormatStateSnapshot | null): void {
+  const bridge = getBridge();
+  bridge?.sendFormatState?.(state);
 }

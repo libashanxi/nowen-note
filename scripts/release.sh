@@ -92,6 +92,7 @@ DO_PUSH_CUSTOM=0       # --push，仅在 build-only + 自定义 image 下
 # TARGETS 用逗号分隔的集合：docker / pc / android / all
 # 默认 docker（向后兼容旧行为）；all = docker,pc,android
 TARGETS="docker"
+TARGETS_EXPLICIT=0     # 用户是否通过 --target 显式指定了
 DO_GITHUB_RELEASE=0    # --github-release：把 PC/Android 产物上传到 GitHub Release（自动打 tag）
 RELEASE_NOTES=""       # --notes "xxx" 或 --notes-file path
 RELEASE_NOTES_FILE=""
@@ -222,7 +223,7 @@ while [ $# -gt 0 ]; do
         --tar)          DO_TAR=1; shift ;;
         --tar-out)      TAR_OUT="${2:-}"; shift 2 ;;
         --push)         DO_PUSH_CUSTOM=1; shift ;;
-        --target)       TARGETS="${2:-}"; shift 2 ;;
+        --target)       TARGETS="${2:-}"; TARGETS_EXPLICIT=1; shift 2 ;;
         --pc-platform)  PC_PLATFORMS="${2:-}"; shift 2 ;;
         --android-docker) ANDROID_USE_DOCKER=1; shift ;;
         --android-docker-image) ANDROID_DOCKER_IMAGE="${2:-}"; shift 2 ;;
@@ -237,6 +238,40 @@ while [ $# -gt 0 ]; do
         *)              die "未知参数: $1（使用 -h 查看帮助）" ;;
     esac
 done
+
+# -------------------- 交互式发布模式选择 --------------------
+# 当用户未通过 --target 显式指定目标、不是 --build-only 模式、且不是 -y 自动模式时，
+# 弹出菜单让用户选择要发布的目标。
+if [ "$TARGETS_EXPLICIT" = "0" ] && [ "$BUILD_ONLY" = "0" ] && [ "$ASSUME_YES" = "0" ]; then
+    echo
+    echo "${C_BOLD}请选择发布模式：${C_RESET}"
+    echo
+    echo "  ${C_CYAN}1${C_RESET})  Docker 镜像${C_RESET}              仅发布 Docker Hub 镜像"
+    echo "  ${C_CYAN}2${C_RESET})  PC 客户端${C_RESET}               打包 exe / AppImage / deb / dmg"
+    echo "  ${C_CYAN}3${C_RESET})  Android APK${C_RESET}             打包 Android 安装包"
+    echo "  ${C_CYAN}4${C_RESET})  PC + Android${C_RESET}            同时打 PC 和 Android"
+    echo "  ${C_CYAN}5${C_RESET})  Docker + PC + Android${C_RESET}   全部发布"
+    echo "  ${C_CYAN}6${C_RESET})  自定义组合${C_RESET}              手动输入 docker,pc,android 组合"
+    echo
+    read -r -p "请输入序号 [1-6]（默认 1）: " _mode_choice
+    _mode_choice="${_mode_choice:-1}"
+    case "$_mode_choice" in
+        1) TARGETS="docker" ;;
+        2) TARGETS="pc" ;;
+        3) TARGETS="android" ;;
+        4) TARGETS="pc,android" ;;
+        5) TARGETS="docker,pc,android" ;;
+        6)
+            echo
+            echo "  可选值：${C_GREEN}docker${C_RESET}, ${C_GREEN}pc${C_RESET}, ${C_GREEN}android${C_RESET}（逗号分隔）"
+            read -r -p "  请输入组合: " _custom_targets
+            [ -z "$_custom_targets" ] && die "未输入任何目标"
+            TARGETS="$_custom_targets"
+            ;;
+        *) die "无效选择: $_mode_choice" ;;
+    esac
+    info "已选择发布目标: ${C_GREEN}${TARGETS}${C_RESET}"
+fi
 
 # 展开 TARGETS
 # - all -> docker,pc,android

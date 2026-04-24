@@ -33,6 +33,7 @@ import TagInput from "@/components/TagInput";
 import AIWritingAssistant from "@/components/AIWritingAssistant";
 import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/components/editors/types";
 import type { FormatMenuPayload } from "@/lib/desktopBridge";
+import { sendFormatState } from "@/lib/desktopBridge";
 import { SlashCommandsMenu, getDefaultSlashCommands, createSlashExtension, createSlashEventHandlers } from "@/components/SlashCommands";
 import CodeBlockView from "@/components/CodeBlockView";
 import MobileFloatingToolbar, { MobileToolbarItem } from "@/components/MobileFloatingToolbar";
@@ -960,10 +961,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
    */
   useEffect(() => {
     if (!editor) return;
-    const bridge = (window as unknown as { nowenDesktop?: { sendFormatState?: (s: unknown) => void } })
-      .nowenDesktop;
-    const send = bridge?.sendFormatState;
-    if (!send) return;
 
     let lastKey = "";
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -986,7 +983,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       const key = Object.values(state).map((v) => (v ? "1" : "0")).join("");
       if (key === lastKey) return;
       lastKey = key;
-      send(state);
+      sendFormatState(state);
     };
 
     const schedule = () => {
@@ -994,18 +991,20 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       timer = setTimeout(flush, 100);
     };
 
-    editor.on("selectionUpdate", schedule);
-    editor.on("transaction", schedule);
-    editor.on("focus", schedule);
-    editor.on("blur", () => {
+    const onBlur = () => {
       // blur 立即清空：用户切到别处时菜单不应保留旧勾选
       if (timer) {
         clearTimeout(timer);
         timer = null;
       }
       lastKey = "";
-      send(null);
-    });
+      sendFormatState(null);
+    };
+
+    editor.on("selectionUpdate", schedule);
+    editor.on("transaction", schedule);
+    editor.on("focus", schedule);
+    editor.on("blur", onBlur);
 
     // 挂载时推一次初始状态
     schedule();
@@ -1018,8 +1017,9 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
       editor.off("selectionUpdate", schedule);
       editor.off("transaction", schedule);
       editor.off("focus", schedule);
+      editor.off("blur", onBlur);
       // 卸载清空，避免切到 MD 模式后菜单仍显示 Tiptap 的旧状态
-      send(null);
+      sendFormatState(null);
     };
   }, [editor]);
 
