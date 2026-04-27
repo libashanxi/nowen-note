@@ -436,6 +436,40 @@ if [ "$HAS_ANDROID" = "1" ]; then
     [ -d "frontend/android" ] || die "未找到 frontend/android 目录"
     [ -f "frontend/android/app/build.gradle" ] || die "未找到 frontend/android/app/build.gradle"
 
+    # ---- 自动探测 JAVA_HOME（Capacitor Android 要求 JDK 21+）----
+    if [ -z "${JAVA_HOME:-}" ]; then
+        _detected_java_home=""
+        # Linux: 尝试常见 JDK 21 路径
+        for _jdir in \
+            /usr/lib/jvm/java-21-openjdk-amd64 \
+            /usr/lib/jvm/java-21-openjdk \
+            /usr/lib/jvm/java-21 \
+            /usr/lib/jvm/temurin-21-jdk-amd64 \
+            /usr/lib/jvm/zulu-21-amd64 \
+        ; do
+            if [ -x "${_jdir}/bin/javac" ]; then
+                _detected_java_home="$_jdir"; break
+            fi
+        done
+        # macOS: 使用 java_home 工具
+        if [ -z "$_detected_java_home" ] && command -v /usr/libexec/java_home >/dev/null 2>&1; then
+            _detected_java_home="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+        fi
+        # 通用 fallback: 从 javac 反推
+        if [ -z "$_detected_java_home" ] && command -v javac >/dev/null 2>&1; then
+            _javac_real="$(readlink -f "$(command -v javac)" 2>/dev/null || true)"
+            if [ -n "$_javac_real" ]; then
+                # /usr/lib/jvm/java-21-xxx/bin/javac -> /usr/lib/jvm/java-21-xxx
+                _detected_java_home="$(dirname "$(dirname "$_javac_real")")"
+            fi
+        fi
+
+        if [ -n "$_detected_java_home" ]; then
+            export JAVA_HOME="$_detected_java_home"
+            info "自动探测 JAVA_HOME=${JAVA_HOME}"
+        fi
+    fi
+
     # ---- 自动切换到 Docker 构建（主机没装 JDK/SDK 时） ----
     # 如果用户显式传了 --android-docker，直接走 docker；
     # 否则当主机既缺 JAVA_HOME 又缺 ANDROID_HOME/ANDROID_SDK_ROOT 时，也自动切到 docker。
