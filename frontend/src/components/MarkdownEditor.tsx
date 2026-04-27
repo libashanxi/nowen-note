@@ -95,6 +95,7 @@ import AIWritingAssistant from "@/components/AIWritingAssistant";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { normalizeToMarkdown, markdownToPlainText } from "@/lib/contentFormat";
+import { api } from "@/lib/api";
 import type { NoteEditorHandle, NoteEditorHeading, NoteEditorProps } from "@/components/editors/types";
 import type { FormatMenuPayload } from "@/lib/desktopBridge";
 import {
@@ -453,18 +454,40 @@ export default forwardRef<NoteEditorHandle, MarkdownEditorProps>(function Markdo
 
   // ---------- 图片上传（点工具栏/斜杠/拖拽/粘贴） ----------
 
-  /** 共用：把 File 读成 data URL 后插入图片语法 */
+  /** 共用：上传文件到 /api/attachments 后插入 Markdown 图片语法 */
   const insertImageFromFile = useCallback((file: File) => {
     const view = viewRef.current;
     if (!view) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const src = reader.result;
-      if (typeof src === "string") {
-        insertImage(view, src, file.name.replace(/\.[^.]+$/, ""));
-      }
-    };
-    reader.readAsDataURL(file);
+    const currentNote = noteRef.current;
+    const alt = file.name.replace(/\.[^.]+$/, "");
+    if (currentNote?.id) {
+      // 有 noteId：走服务端上传，插入相对路径（与 TiptapEditor 一致）
+      api.attachments
+        .upload(currentNote.id, file)
+        .then(({ url }) => {
+          const v = viewRef.current;
+          if (v) insertImage(v, url, alt);
+        })
+        .catch((err) => {
+          console.error("Attachment upload failed, falling back to base64:", err);
+          // 上传失败兜底：仍用 base64 插入，保证用户不丢失图片
+          const reader = new FileReader();
+          reader.onload = () => {
+            const src = reader.result;
+            const v = viewRef.current;
+            if (typeof src === "string" && v) insertImage(v, src, alt);
+          };
+          reader.readAsDataURL(file);
+        });
+    } else {
+      // 没有 note 上下文（理论上不应发生）：退回 base64
+      const reader = new FileReader();
+      reader.onload = () => {
+        const src = reader.result;
+        if (typeof src === "string") insertImage(view, src, alt);
+      };
+      reader.readAsDataURL(file);
+    }
   }, []);
 
   const triggerImagePicker = useCallback(() => {

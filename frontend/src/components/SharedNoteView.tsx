@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Globe, Lock, AlertCircle, Loader2, FileText, MessageCircle, Send, RefreshCw, Edit3, Check, UserCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { api, resolveAttachmentUrl } from "@/lib/api";
 import { ShareInfo, SharedNoteContent, ShareComment, Note } from "@/types";
 import { cn } from "@/lib/utils";
 import { common, createLowlight } from "lowlight";
@@ -832,7 +832,7 @@ function renderNode(node: any): string {
     case "horizontalRule":
       return "<hr />";
     case "image": {
-      const src = node.attrs?.src || "";
+      const src = resolveAttachmentUrl(node.attrs?.src || "");
       const alt = node.attrs?.alt || "";
       return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" />`;
     }
