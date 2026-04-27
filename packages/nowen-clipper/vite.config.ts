@@ -34,6 +34,10 @@ export default defineConfig({
     target: "chrome110",
     minify: false,
     sourcemap: false,
+    commonjsOptions: {
+      // 确保 @mixmark-io/domino（CJS 模块）被正确转换为 ESM
+      include: [/node_modules/],
+    },
     rollupOptions: {
       input: {
         background: resolve(__dirname, "src/background/index.ts"),

@@ -1,6 +1,31 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { NodeViewWrapper, NodeViewProps } from "@tiptap/react";
-import { resolveAttachmentUrl } from "@/lib/api";
+import { resolveAttachmentUrl, getServerUrl } from "@/lib/api";
+
+/**
+ * 判断是否为本应用的附件路径（/api/attachments/xxx）。
+ * 这些路径在 Capacitor Android 下可能因为混合内容策略（https origin
+ * 请求 http 资源）而被 WebView 阻断。
+ */
+function isAttachmentPath(src: string): boolean {
+  if (!src) return false;
+  return /^\/?api\/attachments\//.test(src) || src.includes("/api/attachments/");
+}
+
+/**
+ * 通过 fetch 下载图片并生成 blob URL。
+ * 绕过 Android WebView 的混合内容限制：
+ *   - `<img src="http://...">` 在 `https://localhost` origin 下会被
+ *     部分 WebView 拦截（即使设置了 allowMixedContent）；
+ *   - `fetch()` 走 JS 通道，不受浏览器对 `<img>` 的混合内容策略约束；
+ *   - 转成 `blob:` URL 后再赋给 `<img src>`，blob 协议同源，永远不受限。
+ */
+async function fetchImageAsBlob(url: string): Promise<string> {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`fetch image failed: ${resp.status}`);
+  const blob = await resp.blob();
+  return URL.createObjectURL(blob);
+}
 
 /**
  * ResizableImageView
@@ -202,6 +227,53 @@ export function ResizableImageView(props: NodeViewProps) {
     };
   }, [handleMouseMove, handleMouseUp, handleTouchMove, handleTouchEnd]);
 
+  // ---------- 图片加载状态 ----------
+  const [imgError, setImgError] = useState(false);
+  const [blobSrc, setBlobSrc] = useState<string | null>(null);
+  const resolvedSrc = resolveAttachmentUrl(src);
+
+  // 对附件路径的图片，使用 fetch + blob URL 来加载，
+  // 绕过 Android WebView 混合内容限制。
+  useEffect(() => {
+    setImgError(false);
+    setBlobSrc(null);
+
+    if (!src) return;
+
+    // 只有附件路径且在客户端模式（配置了 serverUrl）才走 blob 通道。
+    // data: / blob: / 同源的 http(s): 不需要转换。
+    const serverUrl = getServerUrl();
+    if (serverUrl && isAttachmentPath(src)) {
+      let cancelled = false;
+      fetchImageAsBlob(resolvedSrc)
+        .then((url) => {
+          if (!cancelled) setBlobSrc(url);
+        })
+        .catch((err) => {
+          console.error("[ResizableImageView] blob fetch failed:", {
+            originalSrc: src,
+            resolvedSrc,
+            error: err,
+          });
+          if (!cancelled) setImgError(true);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    // 非附件路径（data: / blob: / 同源相对路径等）直接用原始 URL
+  }, [src, resolvedSrc]);
+
+  // 释放旧的 blob URL
+  useEffect(() => {
+    return () => {
+      if (blobSrc) URL.revokeObjectURL(blobSrc);
+    };
+  }, [blobSrc]);
+
+  // 最终 img src：优先 blobSrc，否则 resolvedSrc
+  const finalSrc = blobSrc || resolvedSrc;
+
   // 显示用的宽度：拖拽中用 draft，否则用 attribute（null 时交给图片自然宽度）
   const displayWidth = draftWidth ?? (typeof initialWidth === "number" ? initialWidth : null);
 
@@ -248,7 +320,7 @@ export function ResizableImageView(props: NodeViewProps) {
         // 把 /api/attachments/<id> 这类相对路径补成当前 serverUrl 下的绝对 URL，
         // 保证 Capacitor / 独立前端域 / 分享页这些非同源环境下图片能正确加载。
         // 对 data: / blob: / http(s): 会原样返回。
-        src={resolveAttachmentUrl(src)}
+        src={finalSrc}
         alt={alt ?? ""}
         title={title ?? undefined}
         // 保留原扩展的样式类名，保证阅读态 / 只读预览 / 分享页视觉一致
@@ -262,7 +334,36 @@ export function ResizableImageView(props: NodeViewProps) {
           maxWidth: "100%",
         }}
         draggable={false}
+        onError={() => {
+          console.error("[ResizableImageView] img load failed:", {
+            originalSrc: src,
+            resolvedSrc,
+          });
+          setImgError(true);
+        }}
       />
+      {imgError && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.04)",
+            borderRadius: 8,
+            color: "#888",
+            fontSize: 12,
+            padding: "8px 12px",
+            textAlign: "center",
+            wordBreak: "break-all",
+          }}
+        >
+          图片加载失败
+          <br />
+          <span style={{ fontSize: 10, opacity: 0.7 }}>{resolvedSrc?.slice(0, 80)}</span>
+        </div>
+      )}
 
       {/* 四角拖拽手柄：仅在图片被选中 + 可编辑时渲染 */}
       {selected && editable && (

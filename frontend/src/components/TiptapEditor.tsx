@@ -1,6 +1,6 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useEditor, EditorContent, Extension, ReactNodeViewRenderer } from "@tiptap/react";
-import { BubbleMenu } from "@tiptap/react/menus";
+import { posToDOMRect } from "@tiptap/core";
 import { AnimatePresence, motion } from "framer-motion";import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Image from "@tiptap/extension-image";
@@ -291,6 +291,16 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
   const { visible: keyboardOpen } = useKeyboardVisible();
   const dragStart = useRef({ x: 0, y: 0, imgX: 0, imgY: 0 });
   const { t, i18n } = useTranslation();
+
+  // ---------- 选区气泡菜单（划词弹出） ----------
+  // 手动实现，不依赖 Tiptap 内置 BubbleMenu（v3 下有 overflow-auto 裁剪问题）
+  const [bubble, setBubble] = useState<{ open: boolean; top: number; left: number }>({
+    open: false, top: 0, left: 0,
+  });
+  // 图片选中时的快捷尺寸气泡
+  const [imageBubble, setImageBubble] = useState<{ open: boolean; top: number; left: number }>({
+    open: false, top: 0, left: 0,
+  });
 
   // 斜杠命令事件处理器（稳定引用）
   const slashHandlers = useRef(createSlashEventHandlers());
@@ -873,6 +883,68 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
     setEditorFocused(editor.isFocused);
     return () => {
       editor.off("focus", onFocus);
+      editor.off("blur", onBlur);
+    };
+  }, [editor]);
+
+  // ---------- 手动选区气泡菜单定位 ----------
+  // 监听 selectionUpdate / blur，计算浮动菜单坐标（fixed 定位，视口坐标）
+  useEffect(() => {
+    if (!editor) return;
+
+    const updateBubble = () => {
+      const { state, view } = editor;
+      const { selection } = state;
+      const { from, to, empty } = selection;
+
+      // 编辑器失焦或空选区 → 关闭所有气泡
+      if (!view.hasFocus() || empty) {
+        setBubble(b => b.open ? { ...b, open: false } : b);
+        setImageBubble(b => b.open ? { ...b, open: false } : b);
+        return;
+      }
+
+      const isImage = editor.isActive("image");
+
+      if (isImage) {
+        // 图片选区 → 显示图片尺寸气泡
+        setBubble(b => b.open ? { ...b, open: false } : b);
+        const rect = posToDOMRect(view, from, to);
+        const top = Math.max(8, rect.top - 44);
+        const cx = rect.left + rect.width / 2;
+        const left = Math.max(8, Math.min(cx - 140, window.innerWidth - 290));
+        setImageBubble({ open: true, top, left });
+      } else {
+        // 文本选区 → 显示格式化气泡
+        setImageBubble(b => b.open ? { ...b, open: false } : b);
+        // 若文本长度为 0（全是不可见字符）也跳过
+        const text = state.doc.textBetween(from, to, " ");
+        if (!text.trim().length) {
+          setBubble(b => b.open ? { ...b, open: false } : b);
+          return;
+        }
+        const rect = posToDOMRect(view, from, to);
+        const top = Math.max(8, rect.top - 44);
+        const cx = rect.left + rect.width / 2;
+        const left = Math.max(8, Math.min(cx - 110, window.innerWidth - 230));
+        setBubble({ open: true, top, left });
+      }
+    };
+
+    const onBlur = () => {
+      // 延迟一帧关闭，避免点击气泡菜单按钮时因 blur 而菜单消失
+      requestAnimationFrame(() => {
+        if (!editor.view.hasFocus()) {
+          setBubble(b => b.open ? { ...b, open: false } : b);
+          setImageBubble(b => b.open ? { ...b, open: false } : b);
+        }
+      });
+    };
+
+    editor.on("selectionUpdate", updateBubble);
+    editor.on("blur", onBlur);
+    return () => {
+      editor.off("selectionUpdate", updateBubble);
       editor.off("blur", onBlur);
     };
   }, [editor]);
@@ -1472,17 +1544,12 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
         </div>
       )}
 
-      {/* Bubble menu for inline formatting */}
-      {editor && (
-        <BubbleMenu editor={editor}
-          // 仅在"非空文本选区且不是图片选区"时显示文本格式 BubbleMenu，
-          // 避免与下方的图片 BubbleMenu 叠加。
-          shouldShow={({ editor: ed, from, to }) => {
-            if (from === to) return false;
-            if (ed.isActive("image")) return false;
-            return true;
-          }}
-          className="flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
+      {/* 选区气泡菜单：文本格式化（手动实现，fixed 定位，避免被 overflow-auto 裁剪） */}
+      {editor && editable && bubble.open && (
+        <div
+          className="fixed z-50 flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
+          style={{ top: bubble.top, left: bubble.left }}
+          onMouseDown={(e) => e.preventDefault()} // 阻止点击按钮时 editor blur
         >
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
@@ -1534,28 +1601,16 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
               </ToolbarButton>
             </>
           )}
-        </BubbleMenu>
+        </div>
       )}
 
-      {/* Bubble menu for image quick-size */}
-      {editor && (
-        <BubbleMenu
-          editor={editor}
-          // 仅在当前选中的是图片节点时显示。
-          shouldShow={({ editor: ed }) => ed.isActive("image")}
-          className="flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
+      {/* 选区气泡菜单：图片快捷尺寸 */}
+      {editor && editable && imageBubble.open && (
+        <div
+          className="fixed z-50 flex items-center gap-0.5 bg-app-elevated border border-app-border rounded-lg shadow-lg p-1"
+          style={{ top: imageBubble.top, left: imageBubble.left }}
+          onMouseDown={(e) => e.preventDefault()}
         >
-          {/*
-            25% / 50% / 75% / 100% 按"编辑区可视宽度的百分比"计算绝对 px，
-            写进 image 节点的 width 属性（和拖拽手柄写入同一个 attribute，
-            序列化路径完全一致）。
-
-            为什么用编辑区宽度而不是图片原始像素：
-              - 原始像素可能远大于视口（屏幕截图常见 2x/3x DPR），按原始
-                百分比会出现"50% 还是超宽"的反直觉结果；
-              - 编辑区宽度 = 用户实际看到的版心，百分比语义直观；
-              - 最终还是被 <img> 的 max-width:100% 兜底，不会溢出。
-           */}
           {[
             { key: "25", label: t("tiptap.imageSize25"), ratio: 0.25 },
             { key: "50", label: t("tiptap.imageSize50"), ratio: 0.5 },
@@ -1566,7 +1621,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
               key={s.key}
               title={s.label}
               onClick={() => {
-                // 定位编辑器根 DOM 的可用宽度；拿不到就退回 640（常规版心宽）。
                 const root = editor.view.dom as HTMLElement;
                 const contentWidth = root.clientWidth || 640;
                 const target = Math.round(contentWidth * s.ratio);
@@ -1584,7 +1638,6 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           <ToolbarButton
             title={t("tiptap.imageSizeOriginalTitle")}
             onClick={() => {
-              // 移除自定义 width/height，回到图片自然尺寸（受 max-width:100% 约束）。
               editor
                 .chain()
                 .focus()
@@ -1594,7 +1647,7 @@ export default forwardRef<NoteEditorHandle, TiptapEditorProps>(function TiptapEd
           >
             <span className="text-xs px-1">{t("tiptap.imageSizeOriginal")}</span>
           </ToolbarButton>
-        </BubbleMenu>
+        </div>
       )}
 
       {/* Editor content

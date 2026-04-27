@@ -9,6 +9,9 @@
  *   5. 快速捕捉模式：通过 badge / browserAction 点击直接剪藏
  */
 
+// ⚠️ 必须在所有其他 import 之前！为 turndown 等依赖 DOM 的库提供 Service Worker polyfill。
+import "../lib/sw-polyfill";
+
 import { getConfig, isConfigured, normalizeBaseUrl } from "../lib/storage";
 import { importNote, NowenApiError } from "../lib/api";
 import { buildContentBundle, inlineImages } from "../lib/transform";
