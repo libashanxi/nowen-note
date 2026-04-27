@@ -995,10 +995,10 @@ html[data-code-theme="solarized-light"] {
 
 /* 移动端触控优化 */
 @media (max-width: 767px) {
-  /* 增大可触控元素的最小尺寸（排除编辑器内部元素） */
-  button:not(.ProseMirror *):not(.ProseMirror ~ * button),
-  [role="button"]:not(.ProseMirror *),
-  a:not(.ProseMirror *) {
+  /* 增大可触控元素的最小尺寸（排除编辑器内部元素和标签输入区域内的小按钮） */
+  button:not(.ProseMirror *):not(.ProseMirror ~ * button):not(.tag-input-area *),
+  [role="button"]:not(.ProseMirror *):not(.tag-input-area *),
+  a:not(.ProseMirror *):not(.tag-input-area *) {
     min-height: 36px;
     min-width: 36px;
   }

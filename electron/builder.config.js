@@ -68,17 +68,22 @@ module.exports = {
     "node_modules/**/*",
   ],
   // ==== 文件关联：双击 .md / .markdown / .txt 用 Nowen Note 打开 ====
+  // 注意：AppImage 构建器不支持 ext 为数组，必须拆成多个独立条目
   fileAssociations: [
     {
-      ext: ["md", "markdown"],
+      ext: "md",
       name: "Markdown Document",
       description: "Markdown Document",
       role: "Editor",
-      // mac 用 .icns；Windows 使用安装包内的 exe 图标，这里可留空
-      // icon: "build/md.icns",
     },
     {
-      ext: ["txt"],
+      ext: "markdown",
+      name: "Markdown Document",
+      description: "Markdown Document",
+      role: "Editor",
+    },
+    {
+      ext: "txt",
       name: "Plain Text Document",
       description: "Plain Text Document",
       role: "Editor",

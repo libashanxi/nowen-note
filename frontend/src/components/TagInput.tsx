@@ -131,7 +131,7 @@ export default function TagInput({ noteId, noteTags, onTagsChange }: TagInputPro
   const hasExactMatch = suggestions.some((s) => s.name.toLowerCase() === inputValue.trim().toLowerCase());
 
   return (
-    <div className="relative w-full">
+    <div className="relative w-full tag-input-area">
       <div
         className={`flex flex-wrap items-center gap-1.5 px-3 py-1.5 transition-colors ${
           isFocused ? "border-b border-accent-primary/30" : "border-b border-transparent hover:border-app-border"

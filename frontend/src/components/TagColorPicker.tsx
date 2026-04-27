@@ -120,7 +120,7 @@ export default function TagColorPicker({ currentColor, onColorChange, size = "sm
       {open && createPortal(
         <div
           ref={panelRef}
-          className="fixed z-[200] w-[168px] p-2 bg-app-elevated border border-app-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100"
+          className="tag-input-area fixed z-[200] w-[168px] p-2 bg-app-elevated border border-app-border rounded-lg shadow-xl animate-in fade-in zoom-in-95 duration-100"
           style={{ top: panelPos.top, left: panelPos.left }}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
